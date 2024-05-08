@@ -38,7 +38,7 @@ class OstTestCase1 : public TestCase
     OstTestCase1();
     virtual ~OstTestCase1();
     void DoRun() override;
-    static void GlobalTimerTick(Ptr<OstNode> a, Ptr<OstNode> b);
+    void Receive(uint8_t node_id, Ptr<Packet> p);
     std::vector<std::pair<Address, Ptr<OstNode>>> osts;
     Ptr<OstNode> GetOstByAddr(Address addr);
     
@@ -66,7 +66,8 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost,
     Ptr<Packet> p = Create<Packet>(buffer, size);
     if(ost->add_packet_to_tx(p) != 0) {
         NS_LOG_ERROR("Sliding window doesn't have space");
-    };
+        return;
+    }
     Simulator::ScheduleNow(&OstNode::event_handler, ost, APPLICATION_PACKET_READY);
 }
 
@@ -77,6 +78,11 @@ Ptr<OstNode> OstTestCase1::GetOstByAddr(Address addr) {
     }
     return ost;
 }
+
+void
+OstTestCase1::Receive(uint8_t node_id, Ptr<Packet> p){
+    NS_LOG_INFO("NODE["<< std::to_string(node_id) << "] received packet:" << p);
+};
 
 
 void
@@ -107,14 +113,23 @@ OstTestCase1::DoRun()
     size_t txBufferSize = sizeof(txBuffer);
 
     Ptr<OstNode> ostA = CreateObject<OstNode>(1, devA);
+    ostA->SetReceiveCallback(MakeCallback(&OstTestCase1::Receive, this));
     Ptr<OstNode> ostB = CreateObject<OstNode>(2, devB);
+    ostB->SetReceiveCallback(MakeCallback(&OstTestCase1::Receive, this));
 
     osts.push_back(std::make_pair(devA->GetAddress(), ostA));
     osts.push_back(std::make_pair(devB->GetAddress(), ostB));
 
     // Simulator::ScheduleNow(GlobalTimerTick, ostA, ostB);
 
-    Simulator::Schedule(Seconds(1.0),
+    Simulator::Schedule(MicroSeconds(1000000),
+                        &OstTestCase1::SendMsg,
+                        this,
+                        ostA,
+                        txBuffer,
+                        txBufferSize);
+
+    Simulator::Schedule(MicroSeconds(2000100),
                         &OstTestCase1::SendMsg,
                         this,
                         ostA,
