@@ -60,7 +60,8 @@ SpWChannel::GetTypeId()
 SpWChannel::SpWChannel()
     : Channel(),
       m_delay(Seconds(0.)),
-      m_nDevices(0)
+      m_nDevices(0),
+      m_cnt_packets(0)
 {
     NS_LOG_FUNCTION_NOARGS();
 }
@@ -105,7 +106,8 @@ SpWChannel::TransmitStart(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime)
                                    txTime + m_delay,
                                    &SpWDevice::Receive,
                                    m_link[wire].m_dst,
-                                   p->Copy());
+                                   p->Copy(),
+                                   m_cnt_packets);
 
     // Call the tx anim callback on the net device
     m_txrxPointToPoint(p, src, m_link[wire].m_dst, txTime, txTime + m_delay);
@@ -159,5 +161,18 @@ SpWChannel::IsInitialized() const
     NS_ASSERT(m_link[1].m_state != INITIALIZING);
     return true;
 }
+
+uint32_t
+SpWChannel::GetCntPackets() const
+{
+    return m_cnt_packets;
+}
+
+uint32_t
+SpWChannel::IncCntPackets()
+{
+    return ++m_cnt_packets;
+}
+
 
 } // namespace ns3

@@ -154,8 +154,9 @@ class SpWDevice : public NetDevice
      * arrived at the device.
      *
      * \param p Ptr to the received packet.
+     * \param cnt the seq number of packet in channel context.
      */
-    void Receive(Ptr<Packet> p);
+    void Receive(Ptr<Packet> p, uint32_t cnt);
 
     // The remaining methods are documented in ns3::NetDevice*
 
@@ -163,6 +164,7 @@ class SpWDevice : public NetDevice
     uint32_t GetIfIndex() const override;
 
     Ptr<Channel> GetChannel() const override;
+    Ptr<SpWChannel> GetSpWChannel() const;
 
     void SetAddress(Address address) override;
     Address GetAddress() const override;
@@ -196,18 +198,15 @@ class SpWDevice : public NetDevice
 
     void SetReceiveCallback(NetDevice::ReceiveCallback cb) override;
 
+    typedef Callback<bool, Ptr<NetDevice>, Ptr<const Packet>, uint32_t, const Address&>
+        ReceiveCallbackWithSeqN;
+    void SetReceiveCallbackWithSeqN(ReceiveCallbackWithSeqN cb);
+
     Address GetMulticast(Ipv6Address addr) const override;
 
     void SetPromiscReceiveCallback(PromiscReceiveCallback cb) override;
     bool SupportsSendFrom() const override;
 
-  protected:
-    /**
-     * \brief Handler for MPI receive event
-     *
-     * \param p Packet received
-     */
-    void DoMpiReceive(Ptr<Packet> p);
 
   private:
     /**
@@ -426,6 +425,7 @@ class SpWDevice : public NetDevice
 
     Ptr<Node> m_node;                                    //!< Node owning this NetDevice
     Mac48Address m_address;                              //!< Mac48Address of this NetDevice
+    ReceiveCallbackWithSeqN m_rxCallbackSeqN;
     NetDevice::ReceiveCallback m_rxCallback;             //!< Receive callback
     NetDevice::PromiscReceiveCallback m_promiscCallback; //!< Receive callback
                                                          //   (promisc data)

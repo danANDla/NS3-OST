@@ -252,7 +252,7 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
     Time txCompleteTime = txTime;
 
     NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
-    Simulator::Schedule(txCompleteTime, &SpWDevice::TransmitComplete, this);
+    Simulator::Schedule(txCompleteTime, &SpWDevice::TransmitComplete, this); // there isn't inter frame gap
 
     bool result = m_channel->TransmitStart(p, this, txTime);
     if (!result)
@@ -329,7 +329,7 @@ SpWDevice::SetReceiveErrorModel(Ptr<ErrorModel> em)
 }
 
 void
-SpWDevice::Receive(Ptr<Packet> packet)
+SpWDevice::Receive(Ptr<Packet> packet, uint32_t ch_packet_seq_n)
 {
     NS_LOG_FUNCTION(this << packet);
     uint16_t protocol = 0;
@@ -380,6 +380,7 @@ SpWDevice::Receive(Ptr<Packet> packet)
 
         m_macRxTrace(originalPacket);
         m_rxCallback(this, packet, protocol, GetRemote());
+        m_rxCallbackSeqN(this, packet, ch_packet_seq_n, GetRemote());
     }
 }
 
@@ -413,6 +414,12 @@ SpWDevice::GetIfIndex() const
 
 Ptr<Channel>
 SpWDevice::GetChannel() const
+{
+    return m_channel;
+}
+
+Ptr<SpWChannel>
+SpWDevice::GetSpWChannel() const
 {
     return m_channel;
 }
@@ -583,6 +590,13 @@ SpWDevice::NeedsArp() const
 }
 
 void
+SpWDevice::SetReceiveCallbackWithSeqN(ReceiveCallbackWithSeqN cb)
+{
+    m_rxCallbackSeqN = cb;
+}
+
+
+void
 SpWDevice::SetReceiveCallback(NetDevice::ReceiveCallback cb)
 {
     m_rxCallback = cb;
@@ -599,13 +613,6 @@ SpWDevice::SupportsSendFrom() const
 {
     NS_LOG_FUNCTION(this);
     return false;
-}
-
-void
-SpWDevice::DoMpiReceive(Ptr<Packet> p)
-{
-    NS_LOG_FUNCTION(this << p);
-    Receive(p);
 }
 
 Address

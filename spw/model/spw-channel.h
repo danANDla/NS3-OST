@@ -101,6 +101,9 @@ class SpWChannel : public Channel
      */
     Ptr<NetDevice> GetDevice(std::size_t i) const override;
 
+    uint32_t GetCntPackets() const;
+    uint32_t IncCntPackets();
+
   protected:
     /**
      * \brief Get the delay associated with this channel
@@ -210,6 +213,7 @@ class SpWChannel : public Channel
     };
 
     Link m_link[N_DEVICES]; //!< Link model
+    uint32_t m_cnt_packets;
 };
 
 } // namespace ns3

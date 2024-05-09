@@ -68,7 +68,7 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost,
         NS_LOG_ERROR("Sliding window doesn't have space");
         return;
     }
-    Simulator::ScheduleNow(&OstNode::event_handler, ost, APPLICATION_PACKET_READY);
+    Simulator::ScheduleNow(&OstNode::event_handler, ost, APPLICATION_PACKET_READY, 0);
 }
 
 Ptr<OstNode> OstTestCase1::GetOstByAddr(Address addr) {
@@ -81,7 +81,7 @@ Ptr<OstNode> OstTestCase1::GetOstByAddr(Address addr) {
 
 void
 OstTestCase1::Receive(uint8_t node_id, Ptr<Packet> p){
-    NS_LOG_INFO("NODE["<< std::to_string(node_id) << "] received packet:" << p);
+    NS_LOG_LOGIC("NODE["<< std::to_string(node_id) << "] received packet:" << p);
 };
 
 
