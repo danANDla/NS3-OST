@@ -126,7 +126,7 @@ namespace ns3 {
         *
         * Although it is possible in the simulator.
         */
-        return Simulator::GetDelayLeft(last_timer.e_id).GetNanoSeconds();
+        return Simulator::GetDelayLeft(last_timer.e_id).GetMicroSeconds();
     }
 
     int8_t TimerFifo::add_new_timer(uint8_t seq_n, const nsecs_t duration) {

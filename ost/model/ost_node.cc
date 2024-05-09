@@ -101,7 +101,7 @@ OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
         p->AddHeader(header);
         ch_packet_seq_n = spw_layer->GetSpWChannel()->IncCntPackets();
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
-        queue.add_new_timer(tx_window_bottom, 100);
+        queue.add_new_timer(seq_n, 100);
     }
     else if (t == ACK)
     {

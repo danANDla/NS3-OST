@@ -24,7 +24,7 @@ typedef enum {
 } TransportLayerEvent;
 
 class OstNode: public Object {
-    static const uint16_t WINDOW_SZ = 1;
+    static const uint16_t WINDOW_SZ = 10;
     public:
         OstNode(uint8_t id, Ptr<SpWDevice>);
         ~OstNode();
