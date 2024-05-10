@@ -21,7 +21,7 @@
 #include "ns3/address.h"
 #include "ns3/callback.h"
 #include "ns3/data-rate.h"
-#include "ns3/mac48-address.h"
+#include "ns3/mac8-address.h"
 #include "ns3/net-device.h"
 #include "ns3/node.h"
 #include "ns3/nstime.h"
@@ -420,7 +420,7 @@ class SpWDevice : public NetDevice
     TracedCallback<Ptr<const Packet>> m_promiscSnifferTrace;
 
     Ptr<Node> m_node;                                    //!< Node owning this NetDevice
-    Mac48Address m_address;                              //!< Mac48Address of this NetDevice
+    Mac8Address m_address;                               //!< Mac8Address of this NetDevice
     NetDevice::ReceiveCallback m_rxCallback;             //!< Receive callback
     NetDevice::PromiscReceiveCallback m_promiscCallback; //!< Receive callback
                                                          //   (promisc data)

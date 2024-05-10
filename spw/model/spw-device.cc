@@ -21,7 +21,7 @@
 #include "ns3/error-model.h"
 #include "ns3/llc-snap-header.h"
 #include "ns3/log.h"
-#include "ns3/mac48-address.h"
+#include "ns3/mac8-address.h"
 #include "ns3/pointer.h"
 #include "ns3/queue.h"
 #include "ns3/simulator.h"
@@ -50,11 +50,6 @@ SpWDevice::GetTypeId()
                           MakeUintegerAccessor(&SpWDevice::SetMtu,
                                                &SpWDevice::GetMtu),
                           MakeUintegerChecker<uint16_t>())
-            .AddAttribute("Address",
-                          "The MAC address of this device.",
-                          Mac48AddressValue(Mac48Address("ff:ff:ff:ff:ff:ff")),
-                          MakeMac48AddressAccessor(&SpWDevice::m_address),
-                          MakeMac48AddressChecker())
             .AddAttribute("DataRate",
                           "The default data rate for point to point links",
                           DataRateValue(DataRate("32768b/s")),
@@ -251,7 +246,6 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
     Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
     Time txCompleteTime = txTime;
 
-    NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.As(Time::S));
     Simulator::Schedule(txCompleteTime, &SpWDevice::TransmitComplete, this); // there isn't inter frame gap
 
     bool result = m_channel->TransmitStart(p, this, txTime);
@@ -433,7 +427,7 @@ void
 SpWDevice::SetAddress(Address address)
 {
     NS_LOG_FUNCTION(this << address);
-    m_address = Mac48Address::ConvertFrom(address);
+    m_address = Mac8Address::ConvertFrom(address);
 }
 
 Address

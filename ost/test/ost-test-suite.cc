@@ -136,10 +136,10 @@ OstTestCase1::DoRun()
     devB->SetDataRate(DataRate("10Mbps"));
 
     devA->Attach(channel);
-    devA->SetAddress(Mac48Address::Allocate());
+    devA->SetAddress(Mac8Address::Allocate());
     devA->SetQueue(CreateObject<DropTailQueue<Packet>>());
     devB->Attach(channel);
-    devB->SetAddress(Mac48Address::Allocate());
+    devB->SetAddress(Mac8Address::Allocate());
     devB->SetQueue(CreateObject<DropTailQueue<Packet>>());
 
     a->AddDevice(devA);
