@@ -25,7 +25,7 @@ OstNode::OstNode(uint8_t id, Ptr<SpWDevice> dev)
       simulator_id(id)
 {
     queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
-    spw_layer->SetReceiveCallbackWithSeqN(MakeCallback(&OstNode::network_layer_handler, this));
+    spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
 }
 
 OstNode::~OstNode()
@@ -77,15 +77,6 @@ OstNode::send_to_application(Ptr<Packet> packet)
     rx_cb(simulator_id, packet);
 };
 
-void
-print_transmission(int sender, int receiver, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption) {
-    if(sender % 2 == 1) {
-        NS_LOG_INFO("         NODE[" << std::to_string(sender) << "] --" << std::to_string(ch_packet_seq_n) << "-> <SEQ.N=" << std::to_string(seq_n) << ">" << (isAck ? "<ACK>": "     ") << " NODE[" << std::to_string(receiver) << "] " << (isReceiption?"received":""));
-    } else {
-        NS_LOG_INFO((isReceiption?"received":"        ") << " NODE[" << std::to_string(receiver) << "] <-" << std::to_string(ch_packet_seq_n) << "-- <SEQ.N=" << std::to_string(seq_n) << (isAck ? "><ACK>": ">     ") << " NODE[" << std::to_string(sender) << "]");
-    }
-}
-
 int8_t
 OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
 {
@@ -99,7 +90,6 @@ OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
         header.set_type(DATA);
         header.set_src_addr(-1);
         p->AddHeader(header);
-        ch_packet_seq_n = spw_layer->GetSpWChannel()->IncCntPackets();
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
         queue.add_new_timer(seq_n, 100);
     }
@@ -111,10 +101,8 @@ OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
         header.set_type(ACK);
         header.set_src_addr(-1);
         p->AddHeader(header);
-        ch_packet_seq_n = spw_layer->GetSpWChannel()->IncCntPackets();
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
     }
-    print_transmission(simulator_id, simulator_id % 2 + 1, seq_n, t == ACK, ch_packet_seq_n, false);
     return 0;
 }
 
@@ -137,12 +125,11 @@ OstNode::in_rx_window(uint8_t seq_n)
 }
 
 int8_t
-OstNode::get_packet_from_physical(uint32_t ns3_ch_packet_seq_n)
+OstNode::get_packet_from_physical()
 {
     OstHeader header;
     rx_buffer[rx_window_bottom]->RemoveHeader(header);
 
-    print_transmission(simulator_id % 2 + 1, simulator_id, header.get_seq_number(), header.is_ack(), ns3_ch_packet_seq_n, true);
     if (header.is_ack())
     {
         if (in_tx_window(header.get_seq_number()))
@@ -187,7 +174,7 @@ OstNode::get_packet_from_application()
 }
 
 int8_t
-OstNode::event_handler(const TransportLayerEvent e, uint32_t ch_packet_seq_n)
+OstNode::event_handler(const TransportLayerEvent e)
 {
     NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e));
     NS_LOG_LOGIC("tx: " << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
@@ -197,7 +184,7 @@ OstNode::event_handler(const TransportLayerEvent e, uint32_t ch_packet_seq_n)
     switch (e)
     {
     case PACKET_ARRIVED_FROM_NETWORK:
-        get_packet_from_physical(ch_packet_seq_n);
+        get_packet_from_physical();
         break;
     case APPLICATION_PACKET_READY:
         send_to_physical(DATA, (tx_window_top + MAX_UNACK_PACKETS - 1) % MAX_UNACK_PACKETS);
@@ -216,18 +203,18 @@ bool
 OstNode::hw_timer_handler(uint8_t seq_n)
 {
     to_retr = seq_n;
-    event_handler(RETRANSMISSION_INTERRUPT, 0);
+    event_handler(RETRANSMISSION_INTERRUPT);
     return true;
 }
 
 bool
 OstNode::network_layer_handler(Ptr<NetDevice> dev,
                                Ptr<const Packet> pkt,
-                               uint32_t ch_packet_seq_n,
+                               uint16_t mode,
                                const Address& sender)
 {
     add_packet_to_rx(pkt->Copy());
-    Simulator::ScheduleNow(&OstNode::event_handler, this, PACKET_ARRIVED_FROM_NETWORK, ch_packet_seq_n);
+    Simulator::ScheduleNow(&OstNode::event_handler, this, PACKET_ARRIVED_FROM_NETWORK);
     return true;
 }
 

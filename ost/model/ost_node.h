@@ -28,7 +28,7 @@ class OstNode: public Object {
     public:
         OstNode(uint8_t id, Ptr<SpWDevice>);
         ~OstNode();
-        int8_t event_handler(const TransportLayerEvent e, uint32_t ch_packet_seq_n);
+        int8_t event_handler(const TransportLayerEvent e);
 
         void add_packet_to_rx(Ptr<Packet> p);
         int8_t add_packet_to_tx(Ptr<Packet> p);
@@ -40,12 +40,12 @@ class OstNode: public Object {
         int8_t get_packet_from_application();
 
         int8_t send_to_physical(SegmentType t, uint8_t seq_n);
-        int8_t get_packet_from_physical(uint32_t ns3_ch_packet_seq_n);
+        int8_t get_packet_from_physical();
         bool tx_sliding_window_have_space();
         bool in_tx_window(uint8_t);
         bool in_rx_window(uint8_t);
         bool hw_timer_handler(uint8_t);
-        bool network_layer_handler(Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint32_t ch_packet_seq_n, const Address& sender);
+        bool network_layer_handler(Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint16_t mode, const Address& sender);
 
         uint8_t to_retr;
         uint8_t tx_window_bottom;

@@ -40,7 +40,7 @@ class SpwTestCase1 : public TestCase
   private:
     Ptr<const Packet> m_recvdPacket;
     void SendOnePacket(Ptr<SpWDevice> device, const uint8_t* buffer, uint32_t size);
-    bool RxPacket(Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint32_t ch_packet_seq_n, const Address& sender);
+    bool RxPacket(Ptr<NetDevice> dev, Ptr<const Packet> pkt, uint16_t mode, const Address& sender);
 };
 
 // Add some help text to this case to describe what it is intended to test
@@ -67,7 +67,7 @@ SpwTestCase1::SendOnePacket(Ptr<SpWDevice> device,
 bool
 SpwTestCase1::RxPacket(Ptr<NetDevice> dev,
                            Ptr<const Packet> pkt,
-                           uint32_t mode,
+                           uint16_t mode,
                            const Address& sender)
 {
 
@@ -110,7 +110,7 @@ SpwTestCase1::DoRun()
     a->AddDevice(devA);
     b->AddDevice(devB);
 
-    devB->SetReceiveCallbackWithSeqN(MakeCallback(&SpwTestCase1::RxPacket, this));
+    devB->SetReceiveCallback(MakeCallback(&SpwTestCase1::RxPacket, this));
     uint8_t txBuffer[] = "\"Can you tell me where my country lies?\" \\ said the unifaun to his "
                          "true love's eyes. \\ \"It lies with me!\" cried the Queen of Maybe \\ - "
                          "for her merchandise, he traded in his prize.";

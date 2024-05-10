@@ -380,7 +380,6 @@ SpWDevice::Receive(Ptr<Packet> packet, uint32_t ch_packet_seq_n)
 
         m_macRxTrace(originalPacket);
         m_rxCallback(this, packet, protocol, GetRemote());
-        m_rxCallbackSeqN(this, packet, ch_packet_seq_n, GetRemote());
     }
 }
 
@@ -588,13 +587,6 @@ SpWDevice::NeedsArp() const
     NS_LOG_FUNCTION(this);
     return false;
 }
-
-void
-SpWDevice::SetReceiveCallbackWithSeqN(ReceiveCallbackWithSeqN cb)
-{
-    m_rxCallbackSeqN = cb;
-}
-
 
 void
 SpWDevice::SetReceiveCallback(NetDevice::ReceiveCallback cb)

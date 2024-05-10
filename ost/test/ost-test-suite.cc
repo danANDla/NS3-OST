@@ -94,7 +94,7 @@ OstTestCase1::SendPacket(Ptr<OstNode> ost, Ptr<Packet> p)
         NS_LOG_ERROR("Sliding window doesn't have space");
         return;
     }
-    Simulator::ScheduleNow(&OstNode::event_handler, ost, APPLICATION_PACKET_READY, 0);
+    Simulator::ScheduleNow(&OstNode::event_handler, ost, APPLICATION_PACKET_READY);
     Simulator::Schedule(MicroSeconds(1), &OstTestCase1::SendPacketComplete, this, ost);
 }
 

@@ -198,10 +198,6 @@ class SpWDevice : public NetDevice
 
     void SetReceiveCallback(NetDevice::ReceiveCallback cb) override;
 
-    typedef Callback<bool, Ptr<NetDevice>, Ptr<const Packet>, uint32_t, const Address&>
-        ReceiveCallbackWithSeqN;
-    void SetReceiveCallbackWithSeqN(ReceiveCallbackWithSeqN cb);
-
     Address GetMulticast(Ipv6Address addr) const override;
 
     void SetPromiscReceiveCallback(PromiscReceiveCallback cb) override;
@@ -425,7 +421,6 @@ class SpWDevice : public NetDevice
 
     Ptr<Node> m_node;                                    //!< Node owning this NetDevice
     Mac48Address m_address;                              //!< Mac48Address of this NetDevice
-    ReceiveCallbackWithSeqN m_rxCallbackSeqN;
     NetDevice::ReceiveCallback m_rxCallback;             //!< Receive callback
     NetDevice::PromiscReceiveCallback m_promiscCallback; //!< Receive callback
                                                          //   (promisc data)

@@ -23,6 +23,7 @@
 #include "ns3/nstime.h"
 #include "ns3/ptr.h"
 #include "ns3/traced-callback.h"
+#include "ns3/address.h"
 
 #include <list>
 
@@ -80,6 +81,8 @@ class SpWChannel : public Channel
      * \returns true if successful (currently always true)
      */
     virtual bool TransmitStart(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime);
+
+    bool TransmitComplete(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime);
 
     /**
      * \brief Get number of devices on this channel
@@ -149,6 +152,8 @@ class SpWChannel : public Channel
                                           Ptr<NetDevice> rxDevice,
                                           Time duration,
                                           Time lastBitTime);
+
+    void print_transmission(Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption) const; 
 
   private:
     /** Each point to point link has exactly two net devices. */
