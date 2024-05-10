@@ -81,7 +81,6 @@ int8_t
 OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
 {
     OstHeader header;
-    uint32_t ch_packet_seq_n;
     if (t == DATA)
     {
         Ptr<Packet> p = tx_buffer[seq_n]->Copy();
@@ -91,7 +90,7 @@ OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
         header.set_src_addr(-1);
         p->AddHeader(header);
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
-        queue.add_new_timer(seq_n, 100);
+        if(queue.add_new_timer(seq_n, 100) != 0) NS_LOG_ERROR("timer error");
     }
     else if (t == ACK)
     {
@@ -158,7 +157,6 @@ OstNode::get_packet_from_physical()
     return 0;
 }
 
-
 int8_t
 OstNode::get_packet_from_application()
 {
@@ -176,10 +174,10 @@ OstNode::get_packet_from_application()
 int8_t
 OstNode::event_handler(const TransportLayerEvent e)
 {
-    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e));
-    NS_LOG_LOGIC("tx: " << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
-                        << ", rx: " << std::to_string(rx_window_bottom) << " "
-                        << std::to_string(rx_window_top) << " ");
+    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
+                         << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
+                         << ", rx: " << std::to_string(rx_window_bottom) << " "
+                         << std::to_string(rx_window_top) << " ");
 
     switch (e)
     {
@@ -249,4 +247,4 @@ OstNode::event_name(TransportLayerEvent e)
         return "unknown event";
     }
 }
-}
+} // namespace ns3

@@ -97,19 +97,57 @@ class TimerFifo {
         TimerFifo(uint16_t win_sz);
         ~TimerFifo();
 
-        bool is_queue_have_space();
         void Print(std::ostream& os) const;
+
+        /**
+         * Add new timer.
+         *
+         * \param seq_n sequence number of packet timer set for.
+         * \param duration
+         * \return 1 if timer added succesfully
+         */
         int8_t add_new_timer(uint8_t seq_n, nsecs_t duration);
+
+        /**
+         * Cancel timer that was added to q.
+         *
+         * \param seq_n sequence number of packet timer set for.
+         * \return 1 if timer cancel succesfully
+         */
         int8_t cancel_timer(uint8_t seq_n);
+
         void set_callback(TimerHandleCallback cb);
     private:
+        void move_head();
+        void rmove_head();
+        void move_tail();
+        bool is_queue_have_space();
+        int8_t get_number_of_timers();
+
+        /**
+         * Push timer to queue.
+         *
+         * \param seq_n sequence number of packet timer set for.
+         * \param duration of timer
+         * \param ch Ptr to the value that should be set in hw timer (0 or duration).
+         * \return 1 if timer pushed succesfully
+         */
+        int8_t push_timer(uint8_t seq_n, nsecs_t duration, nsecs_t& duration_to_set);
+
+        /**
+         * Pop timer to queue.
+         *
+         * \param seq_n sequence number of packet timer set for.
+         * \param ch Ptr to the value that should be set in hw timer. 0, if there isn't tiemrs left in q
+         * \return 1 if timer poped succesfully
+         */
+        int8_t pop_timer(uint8_t seq_n, nsecs_t& duration_to_set);
+
         nsecs_t get_hard_timer_left_time();
         int8_t activate_timer(const nsecs_t duration);
-        nsecs_t push_timer(uint8_t seq_n, nsecs_t duration);
-        nsecs_t pop_timer(uint8_t srq_n);
         void timer_interrupt_handler();
 
-        std::pair<uint8_t, nsecs_t> data[MAX_UNACK_PACKETS];
+        std::pair<uint8_t, nsecs_t> data[MAX_UNACK_PACKETS + 1];
         uint16_t head;
         uint16_t tail;
         uint16_t window_sz;
