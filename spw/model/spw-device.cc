@@ -16,18 +16,19 @@
  */
 
 #include "spw-device.h"
+
 #include "spw-channel.h"
 
 #include "ns3/error-model.h"
 #include "ns3/llc-snap-header.h"
 #include "ns3/log.h"
 #include "ns3/mac8-address.h"
+#include "ns3/ost-header.h"
 #include "ns3/pointer.h"
 #include "ns3/queue.h"
 #include "ns3/simulator.h"
 #include "ns3/trace-source-accessor.h"
 #include "ns3/uinteger.h"
-#include "ns3/ost-header.h"
 
 namespace ns3
 {
@@ -47,8 +48,7 @@ SpWDevice::GetTypeId()
             .AddAttribute("Mtu",
                           "The MAC-level Maximum Transmission Unit",
                           UintegerValue(DEFAULT_MTU),
-                          MakeUintegerAccessor(&SpWDevice::SetMtu,
-                                               &SpWDevice::GetMtu),
+                          MakeUintegerAccessor(&SpWDevice::SetMtu, &SpWDevice::GetMtu),
                           MakeUintegerChecker<uint16_t>())
             .AddAttribute("DataRate",
                           "The default data rate for point to point links",
@@ -115,7 +115,7 @@ SpWDevice::GetTypeId()
             //
             // Trace sources at the "bottom" of the net device, where packets transition
             // to/from the channel.
-            //
+            /// Se
             .AddTraceSource("PhyTxBegin",
                             "Trace source indicating a packet has begun "
                             "transmitting over the channel",
@@ -246,7 +246,9 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
     Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
     Time txCompleteTime = txTime;
 
-    Simulator::Schedule(txCompleteTime, &SpWDevice::TransmitComplete, this); // there isn't inter frame gap
+    Simulator::Schedule(txCompleteTime,
+                        &SpWDevice::TransmitComplete,
+                        this); // there isn't inter frame gap
 
     bool result = m_channel->TransmitStart(p, this, txTime);
     if (!result)
@@ -393,6 +395,14 @@ SpWDevice::NotifyLinkUp()
 }
 
 void
+SpWDevice::NotifyLinksDown()
+{
+    NS_LOG_FUNCTION(this);
+    m_linkUp = false;
+    m_linkChangeCallbacks();
+}
+
+void
 SpWDevice::SetIfIndex(const uint32_t index)
 {
     NS_LOG_FUNCTION(this);
@@ -535,14 +545,7 @@ SpWDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber
         //
         // If the channel is ready for transition we send the packet right now
         //
-        if (m_txMachineState == READY)
-        {
-            packet = m_queue->Dequeue();
-            m_snifferTrace(packet);
-            m_promiscSnifferTrace(packet);
-            bool ret = TransmitStart(packet);
-            return ret;
-        }
+        Simulator::ScheduleNow(&SpWDevice::CheckQueue, this);
         return true;
     }
 
@@ -552,11 +555,37 @@ SpWDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber
     return false;
 }
 
+void
+SpWDevice::CheckQueue()
+{
+    if (m_txMachineState == DOWN) {
+        m_queue->Flush();
+        return;
+    }
+    if (m_txMachineState == READY && !m_queue->IsEmpty())
+    {
+        Ptr<Packet> packet = m_queue->Dequeue();
+        m_snifferTrace(packet);
+        m_promiscSnifferTrace(packet);
+        TransmitStart(packet);
+    }
+    else
+    {
+        Simulator::Schedule(MicroSeconds(1), &SpWDevice::CheckQueue, this);
+    }
+}
+
+void
+SpWDevice::Shutdown()
+{
+    m_txMachineState = DOWN;
+}
+
 bool
 SpWDevice::SendFrom(Ptr<Packet> packet,
-                                const Address& source,
-                                const Address& dest,
-                                uint16_t protocolNumber)
+                    const Address& source,
+                    const Address& dest,
+                    uint16_t protocolNumber)
 {
     NS_LOG_FUNCTION(this << packet << source << dest << protocolNumber);
     return false;

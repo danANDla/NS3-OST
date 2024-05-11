@@ -132,7 +132,6 @@ SpWChannel::TransmitStart(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime)
                                    m_link[wire].m_dst,
                                    p->Copy(),
                                    m_cnt_packets);
-
     Simulator::Schedule(txTime + m_delay, &SpWChannel::print_transmission, this, src->GetAddress(), seq_n, isAck, m_cnt_packets, true);
 
     // Call the tx anim callback on the net device

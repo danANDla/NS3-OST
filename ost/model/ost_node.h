@@ -25,11 +25,13 @@ typedef enum {
 
 class OstNode: public Object {
     static const uint16_t WINDOW_SZ = 10;
+    static const nsecs_t DURATION_RETRANSMISSON = 10000;
     public:
         OstNode(uint8_t id, Ptr<SpWDevice>);
         ~OstNode();
         int8_t event_handler(const TransportLayerEvent e);
 
+        void shutdown();
         void add_packet_to_rx(Ptr<Packet> p);
         int8_t add_packet_to_tx(Ptr<Packet> p);
 

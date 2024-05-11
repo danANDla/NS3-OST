@@ -203,6 +203,7 @@ class SpWDevice : public NetDevice
     void SetPromiscReceiveCallback(PromiscReceiveCallback cb) override;
     bool SupportsSendFrom() const override;
 
+    void Shutdown();
 
   private:
     /**
@@ -260,6 +261,13 @@ class SpWDevice : public NetDevice
     void TransmitComplete();
 
     /**
+     * Start transmitting packeets from queue.
+     *
+     * Send packets if txStateMachine Ready.
+     */
+    void CheckQueue();
+
+    /**
      * \brief Make the link up and running
      *
      * It calls also the linkChange callback.
@@ -267,10 +275,20 @@ class SpWDevice : public NetDevice
     void NotifyLinkUp();
 
     /**
+     * \brief Make the link down. Should postpone transmission
+     *
+     * It calls also the linkChange callback.
+     */
+    void NotifyLinksDown();
+
+    /**
      * Enumeration of the states of the transmit machine of the net device.
      */
     enum TxMachineState
     {
+        DOWN,
+        ERROR_RESET,
+        CONNECTING,
         READY, /**< The transmitter is ready to begin transmission of a packet */
         BUSY   /**< The transmitter is busy transmitting a packet */
     };

@@ -38,11 +38,6 @@ OstNode::SetReceiveCallback(ReceiveCallback cb)
     rx_cb = cb;
 }
 
-void
-OstNode::add_packet_to_rx(Ptr<Packet> p)
-{
-    rx_buffer[rx_window_bottom] = p;
-}
 
 bool
 OstNode::tx_sliding_window_have_space()
@@ -55,6 +50,18 @@ OstNode::tx_sliding_window_have_space()
     {
         return MAX_UNACK_PACKETS - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
     }
+}
+
+void
+OstNode::shutdown()
+{
+    spw_layer->Shutdown();    
+}
+
+void
+OstNode::add_packet_to_rx(Ptr<Packet> p)
+{
+    rx_buffer[rx_window_bottom] = p;
 }
 
 int8_t
@@ -90,7 +97,7 @@ OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
         header.set_src_addr(-1);
         p->AddHeader(header);
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
-        if(queue.add_new_timer(seq_n, 100) != 0) NS_LOG_ERROR("timer error");
+        if(queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0) NS_LOG_ERROR("timer error");
     }
     else if (t == ACK)
     {
@@ -174,7 +181,7 @@ OstNode::get_packet_from_application()
 int8_t
 OstNode::event_handler(const TransportLayerEvent e)
 {
-    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
+    NS_LOG_LOGIC("\nNODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
                          << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
                          << ", rx: " << std::to_string(rx_window_bottom) << " "
                          << std::to_string(rx_window_top) << " ");

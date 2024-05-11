@@ -48,6 +48,7 @@ class OstTestCase1 : public TestCase
     void SendMsg(Ptr<OstNode> device, const uint8_t* buffer, uint32_t size);
     void SendPacket(Ptr<OstNode> ost, Ptr<Packet> p);
     void SendPacketComplete(Ptr<OstNode> ost);
+    void ShutdownDevices();
     Ptr<Queue<Packet>> m_q;
 };
 
@@ -83,6 +84,7 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost, const uint8_t* buffer, uint32_t size)
         size -= packetSize;
     }
     Ptr<Packet> p = m_q->Dequeue();
+
     SendPacket(ost, p);
 }
 
@@ -103,6 +105,12 @@ OstTestCase1::SendPacketComplete(Ptr<OstNode> ost)
 {
     Ptr<Packet> p = m_q->Dequeue();
     if(p) SendPacket(ost, p);
+}
+
+void OstTestCase1::ShutdownDevices()
+{
+    osts[0].second->shutdown();
+    osts[1].second->shutdown();
 }
 
 Ptr<OstNode>
@@ -160,12 +168,13 @@ OstTestCase1::DoRun()
 
     // Simulator::ScheduleNow(GlobalTimerTick, ostA, ostB);
 
-    Simulator::Schedule(MicroSeconds(1000000),
+    Simulator::Schedule(Seconds(1),
                         &OstTestCase1::SendMsg,
                         this,
                         ostA,
                         txBuffer,
                         txBufferSize);
+    Simulator::Schedule(Seconds(20), &OstTestCase1::ShutdownDevices, this);
 
     Simulator::Run();
 
