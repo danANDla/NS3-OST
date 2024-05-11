@@ -12,7 +12,7 @@ namespace ns3
 
 NS_LOG_COMPONENT_DEFINE("OstNode");
 
-OstNode::OstNode(uint8_t id, Ptr<SpWDevice> dev)
+OstNode::OstNode(Ptr<SpWDevice> dev)
     : tx_window_bottom(0),
       tx_window_top(0),
       rx_window_bottom(0),
@@ -21,11 +21,11 @@ OstNode::OstNode(uint8_t id, Ptr<SpWDevice> dev)
       rx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
       acknowledged(std::vector<bool>(WINDOW_SZ)),
       queue(TimerFifo(WINDOW_SZ)),
-      spw_layer(dev),
-      simulator_id(id)
+      spw_layer(dev)
 {
     queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
     spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
+    spw_layer->GetAddress().CopyTo(&simulator_id);
 }
 
 OstNode::~OstNode()
@@ -36,6 +36,12 @@ void
 OstNode::SetReceiveCallback(ReceiveCallback cb)
 {
     rx_cb = cb;
+}
+
+Ptr<SpWDevice>
+OstNode::GetSpWLayer()
+{
+    return spw_layer;
 }
 
 
@@ -187,7 +193,7 @@ OstNode::get_packet_from_application()
 int8_t
 OstNode::event_handler(const TransportLayerEvent e)
 {
-    NS_LOG_LOGIC("\nNODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
+    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
                          << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
                          << ", rx: " << std::to_string(rx_window_bottom) << " "
                          << std::to_string(rx_window_top) << " ");

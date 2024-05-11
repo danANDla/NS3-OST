@@ -27,7 +27,7 @@ class OstNode: public Object {
     static const uint16_t WINDOW_SZ = 10;
     static const nsecs_t DURATION_RETRANSMISSON = 10000;
     public:
-        OstNode(uint8_t id, Ptr<SpWDevice>);
+        OstNode(Ptr<SpWDevice>);
         ~OstNode();
         int8_t event_handler(const TransportLayerEvent e);
 
@@ -38,6 +38,7 @@ class OstNode: public Object {
 
         typedef Callback<void, uint8_t, Ptr<Packet>> ReceiveCallback;
         void SetReceiveCallback(OstNode::ReceiveCallback cb);
+        Ptr<SpWDevice> GetSpWLayer();
     private:
         void send_to_application(Ptr<Packet> packet);
         int8_t get_packet_from_application();

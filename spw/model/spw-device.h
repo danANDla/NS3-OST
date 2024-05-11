@@ -449,6 +449,7 @@ class SpWDevice : public NetDevice
 
     Ptr<Node> m_node;                                    //!< Node owning this NetDevice
     Mac8Address m_address;                               //!< Mac8Address of this NetDevice
+    uint8_t address;                               
     NetDevice::ReceiveCallback m_rxCallback;             //!< Receive callback
     NetDevice::PromiscReceiveCallback m_promiscCallback; //!< Receive callback
                                                          //   (promisc data)

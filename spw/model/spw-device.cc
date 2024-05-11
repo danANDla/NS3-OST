@@ -338,8 +338,9 @@ SpWDevice::Receive(Ptr<Packet> packet, uint32_t ch_packet_seq_n)
         //
         m_phyRxDropTrace(packet);
 
+        NS_LOG_INFO("SPW[" << std::to_string(address) << "] detected error. Reconnecting.");
         m_channel->NotifyError(this);
-        m_machineState = ERROR_RESET;
+        ErrorResetSpWState();
     }
     else
     {
@@ -437,10 +438,11 @@ SpWDevice::GetSpWChannel() const
 // clients get and set the address, but simply ignore them.
 
 void
-SpWDevice::SetAddress(Address address)
+SpWDevice::SetAddress(Address addr)
 {
-    NS_LOG_FUNCTION(this << address);
-    m_address = Mac8Address::ConvertFrom(address);
+    NS_LOG_FUNCTION(this << addr);
+    m_address = Mac8Address::ConvertFrom(addr);
+    m_address.CopyTo(&address);
 }
 
 Address

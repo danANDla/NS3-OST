@@ -12,6 +12,7 @@
 #include "ns3/spw-channel.h"
 #include "ns3/spw-device.h"
 #include "ns3/test.h"
+#include "ns3/error-model.h"
 
 // Do not put your test classes in namespace ns3.  You may find it useful
 // to use the using directive to access the ns3 namespace directly
@@ -158,18 +159,25 @@ OstTestCase1::DoRun()
                          "for her merchandise, he traded in his prize.";
     size_t txBufferSize = sizeof(txBuffer);
 
-    Ptr<OstNode> ostA = CreateObject<OstNode>(1, devA);
+    Ptr<OstNode> ostA = CreateObject<OstNode>(devA);
     ostA->SetReceiveCallback(MakeCallback(&OstTestCase1::Receive, this));
-    Ptr<OstNode> ostB = CreateObject<OstNode>(2, devB);
+    Ptr<OstNode> ostB = CreateObject<OstNode>(devB);
     ostB->SetReceiveCallback(MakeCallback(&OstTestCase1::Receive, this));
+
+    
+    Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
+    em->SetUnit(RateErrorModel::ERROR_UNIT_PACKET);
+    em->SetRate(0.3);
+    ostA->GetSpWLayer()->SetCharacterParityErrorModel(em);
+    ostB->GetSpWLayer()->SetCharacterParityErrorModel(em);
 
     osts.push_back(std::make_pair(devA->GetAddress(), ostA));
     osts.push_back(std::make_pair(devB->GetAddress(), ostB));
 
     // Simulator::ScheduleNow(GlobalTimerTick, ostA, ostB);
 
-    Simulator::Schedule(Seconds(1), &OstNode::start, ostA);
-    Simulator::Schedule(Seconds(1),
+    Simulator::Schedule(MilliSeconds(1600), &OstNode::start, ostA);
+    Simulator::Schedule(MilliSeconds(1800),
                         &OstTestCase1::SendMsg,
                         this,
                         ostA,
