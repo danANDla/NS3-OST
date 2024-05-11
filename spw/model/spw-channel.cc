@@ -20,10 +20,10 @@
 #include "spw-device.h"
 
 #include "ns3/log.h"
+#include "ns3/ost-header.h"
 #include "ns3/packet.h"
 #include "ns3/simulator.h"
 #include "ns3/trace-source-accessor.h"
-#include "ns3/ost-header.h"
 
 namespace ns3
 {
@@ -88,7 +88,12 @@ SpWChannel::Attach(Ptr<SpWDevice> device)
 }
 
 void
-SpWChannel::print_transmission(Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption) const {
+SpWChannel::print_transmission(Address src,
+                               uint8_t seq_n,
+                               bool isAck,
+                               uint32_t ch_packet_seq_n,
+                               bool isReceiption) const
+{
     uint32_t wire = src == m_link[0].m_src->GetAddress() ? 0 : 1;
 
     uint8_t senderAddress[Address::MAX_SIZE];
@@ -99,19 +104,27 @@ SpWChannel::print_transmission(Address src, uint8_t seq_n, bool isAck, uint32_t 
     m_link[wire].m_dst->GetAddress().CopyTo(recieverAddress);
     uint8_t receiver = recieverAddress[0];
 
-    if(wire == 0) {
-        NS_LOG_INFO("         NODE[" << std::to_string(sender) << "] --" << std::to_string(ch_packet_seq_n) << "-> <SEQ.N=" << std::to_string(seq_n) << ">" << (isAck ? "<ACK>": "     ") << " NODE[" << std::to_string(receiver) << "] " << (isReceiption?"received":""));
-    } else {
-        NS_LOG_INFO((isReceiption?"received":"        ") << " NODE[" << std::to_string(receiver) << "] <-" << std::to_string(ch_packet_seq_n) << "-- <SEQ.N=" << std::to_string(seq_n) << (isAck ? "><ACK>": ">     ") << " NODE[" << std::to_string(sender) << "]");
+    if (wire == 0)
+    {
+        NS_LOG_INFO("         NODE["
+                    << std::to_string(sender) << "] --" << std::to_string(ch_packet_seq_n)
+                    << "-> <SEQ.N=" << std::to_string(seq_n) << ">" << (isAck ? "<ACK>" : "     ")
+                    << " NODE[" << std::to_string(receiver) << "] "
+                    << (isReceiption ? "received" : ""));
+    }
+    else
+    {
+        NS_LOG_INFO((isReceiption ? "received" : "        ")
+                    << " NODE[" << std::to_string(receiver) << "] <-"
+                    << std::to_string(ch_packet_seq_n) << "-- <SEQ.N=" << std::to_string(seq_n)
+                    << (isAck ? "><ACK>" : ">     ") << " NODE[" << std::to_string(sender) << "]");
     }
 }
-
 
 bool
 SpWChannel::TransmitStart(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime)
 {
     NS_LOG_FUNCTION(this << p << src);
-
 
     NS_ASSERT(m_link[0].m_state != INITIALIZING);
     NS_ASSERT(m_link[1].m_state != INITIALIZING);
@@ -132,11 +145,43 @@ SpWChannel::TransmitStart(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime)
                                    m_link[wire].m_dst,
                                    p->Copy(),
                                    m_cnt_packets);
-    Simulator::Schedule(txTime + m_delay, &SpWChannel::print_transmission, this, src->GetAddress(), seq_n, isAck, m_cnt_packets, true);
+    Simulator::Schedule(txTime + m_delay,
+                        &SpWChannel::print_transmission,
+                        this,
+                        src->GetAddress(),
+                        seq_n,
+                        isAck,
+                        m_cnt_packets,
+                        true);
 
     // Call the tx anim callback on the net device
     m_txrxPointToPoint(p, src, m_link[wire].m_dst, txTime, txTime + m_delay);
     return true;
+}
+
+void
+SpWChannel::NotifyError(Ptr<SpWDevice> caller)
+{
+    NS_LOG_FUNCTION(this << caller);
+
+    NS_ASSERT(m_link[0].m_state != INITIALIZING);
+    NS_ASSERT(m_link[1].m_state != INITIALIZING);
+
+    uint32_t wire = caller == m_link[0].m_src ? 0 : 1;
+
+    Simulator::Schedule(APPROACH_TIME, &SpWDevice::ApproachLinkDisconnection, m_link[wire].m_dst);
+}
+
+bool
+SpWChannel::LinkReady(Ptr<SpWDevice> caller)
+{
+    NS_LOG_FUNCTION(this << caller);
+
+    NS_ASSERT(m_link[0].m_state != INITIALIZING);
+    NS_ASSERT(m_link[1].m_state != INITIALIZING);
+
+    uint32_t wire = caller == m_link[0].m_src ? 0 : 1;
+    return m_link[wire].m_dst->IsReadyToConnect();
 }
 
 std::size_t
@@ -198,6 +243,5 @@ SpWChannel::IncCntPackets()
 {
     return ++m_cnt_packets;
 }
-
 
 } // namespace ns3

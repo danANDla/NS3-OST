@@ -106,6 +106,8 @@ class SpWChannel : public Channel
 
     uint32_t GetCntPackets() const;
     uint32_t IncCntPackets();
+    void NotifyError(Ptr<SpWDevice> caller);
+    bool LinkReady(Ptr<SpWDevice> caller);
 
   protected:
     /**
@@ -158,6 +160,7 @@ class SpWChannel : public Channel
   private:
     /** Each point to point link has exactly two net devices. */
     static const std::size_t N_DEVICES = 2;
+    const Time APPROACH_TIME = NanoSeconds(850); // so-called disconnect timeout window
 
     Time m_delay;           //!< Propagation delay
     std::size_t m_nDevices; //!< Devices of this channel

@@ -53,6 +53,12 @@ OstNode::tx_sliding_window_have_space()
 }
 
 void
+OstNode::start()
+{
+    spw_layer->ErrorResetSpWState();
+}
+
+void
 OstNode::shutdown()
 {
     spw_layer->Shutdown();    

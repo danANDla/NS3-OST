@@ -31,6 +31,7 @@ class OstNode: public Object {
         ~OstNode();
         int8_t event_handler(const TransportLayerEvent e);
 
+        void start();
         void shutdown();
         void add_packet_to_rx(Ptr<Packet> p);
         int8_t add_packet_to_tx(Ptr<Packet> p);

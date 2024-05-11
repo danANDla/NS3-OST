@@ -136,14 +136,13 @@ class SpWDevice : public NetDevice
     Ptr<Queue<Packet>> GetQueue() const;
 
     /**
-     * Attach a receive ErrorModel to the PointToPointNetDevice.
+     * Attach a receive ErrorModel to the SpW device.
      *
-     * The PointToPointNetDevice may optionally include an ErrorModel in
-     * the packet receive chain.
+     * Model SpW-character bits parity errors, that results in reconnection.
      *
      * \param em Ptr to the ErrorModel.
      */
-    void SetReceiveErrorModel(Ptr<ErrorModel> em);
+    void SetCharacterParityErrorModel(Ptr<ErrorModel> em);
 
     /**
      * Receive a packet from a connected PointToPointChannel.
@@ -204,8 +203,18 @@ class SpWDevice : public NetDevice
     bool SupportsSendFrom() const override;
 
     void Shutdown();
+    void ApproachLinkDisconnection();
+    void EstablishConnection();
+    bool IsReadyToConnect();
+    void ErrorResetSpWState();
+    void ErrorWaitSpWState();
+    void ReadySpWState();
+    void RunSpWState();
 
   private:
+    const Time EXCHANGE_OF_SILENCE = NanoSeconds(19200); // minimumtime needed to establish connection
+    const Time SPW_DELAY = NanoSeconds(12800);
+    const Time SPW_HALF_DELAY = NanoSeconds(6400);
     /**
      * \brief Dispose of the object
      */
@@ -282,21 +291,22 @@ class SpWDevice : public NetDevice
     void NotifyLinksDown();
 
     /**
-     * Enumeration of the states of the transmit machine of the net device.
+     * Enumeration of the states of the interface of the SpW device.
      */
-    enum TxMachineState
+    enum MachineState
     {
         DOWN,
         ERROR_RESET,
-        CONNECTING,
-        READY, /**< The transmitter is ready to begin transmission of a packet */
+        ERROR_WAIT,
+        READY,
+        RUN, /**< The transmitter is ready to begin transmission of a packet */
         BUSY   /**< The transmitter is busy transmitting a packet */
     };
 
     /**
-     * The state of the Net Device transmit state machine.
+     * The state of the SpW Interface state machine.
      */
-    TxMachineState m_txMachineState;
+    MachineState m_machineState;
 
     /**
      * The data rate that the Net Device uses to simulate packet transmission
@@ -327,7 +337,7 @@ class SpWDevice : public NetDevice
     /**
      * Error model for receive packet events
      */
-    Ptr<ErrorModel> m_receiveErrorModel;
+    Ptr<ErrorModel> m_characterParityErrorModel;
 
     /**
      * The trace source fired when packets come into the "top" of the device
@@ -445,6 +455,8 @@ class SpWDevice : public NetDevice
     uint32_t m_ifIndex;                                  //!< Index of the interface
     bool m_linkUp;                                       //!< Identify if the link is up or not
     TracedCallback<> m_linkChangeCallbacks;              //!< Callback for the link change event
+
+    EventId stateChangeToErrorResetEventId;
 
     static const uint16_t DEFAULT_MTU = MAX_SPW_PACKET_SZ; //!< Default MTU
 

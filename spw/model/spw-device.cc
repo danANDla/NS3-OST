@@ -56,9 +56,9 @@ SpWDevice::GetTypeId()
                           MakeDataRateAccessor(&SpWDevice::m_bps),
                           MakeDataRateChecker())
             .AddAttribute("ReceiveErrorModel",
-                          "The receiver error model used to simulate packet loss",
+                          "The receiver error model used to simulate spw character parity errors",
                           PointerValue(),
-                          MakePointerAccessor(&SpWDevice::m_receiveErrorModel),
+                          MakePointerAccessor(&SpWDevice::m_characterParityErrorModel),
                           MakePointerChecker<ErrorModel>())
             .AddAttribute("InterframeGap",
                           "The time to wait between packet (frame) transmissions",
@@ -169,7 +169,7 @@ SpWDevice::GetTypeId()
 }
 
 SpWDevice::SpWDevice()
-    : m_txMachineState(READY),
+    : m_machineState(DOWN),
       m_channel(nullptr),
       m_linkUp(false),
       m_currentPkt(nullptr)
@@ -207,7 +207,7 @@ SpWDevice::DoDispose()
     NS_LOG_FUNCTION(this);
     m_node = nullptr;
     m_channel = nullptr;
-    m_receiveErrorModel = nullptr;
+    m_characterParityErrorModel = nullptr;
     m_currentPkt = nullptr;
     m_queue = nullptr;
     NetDevice::DoDispose();
@@ -238,8 +238,8 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
     // We need to tell the channel that we've started wiggling the wire and
     // schedule an event that will be executed when the transmission is complete.
     //
-    NS_ASSERT_MSG(m_txMachineState == READY, "Must be READY to transmit");
-    m_txMachineState = BUSY;
+    NS_ASSERT_MSG(m_machineState == RUN, "Must be RUN to transmit");
+    m_machineState = BUSY;
     m_currentPkt = p;
     m_phyTxBeginTrace(m_currentPkt);
 
@@ -269,8 +269,8 @@ SpWDevice::TransmitComplete()
     // is empty, we are done, otherwise we need to start transmitting the
     // next packet.
     //
-    NS_ASSERT_MSG(m_txMachineState == BUSY, "Must be BUSY if transmitting");
-    m_txMachineState = READY;
+    NS_ASSERT_MSG(m_machineState == BUSY, "Must be BUSY if transmitting");
+    m_machineState = RUN;
 
     NS_ASSERT_MSG(m_currentPkt, "SpWDevice::TransmitComplete(): m_currentPkt zero");
 
@@ -318,10 +318,10 @@ SpWDevice::SetQueue(Ptr<Queue<Packet>> q)
 }
 
 void
-SpWDevice::SetReceiveErrorModel(Ptr<ErrorModel> em)
+SpWDevice::SetCharacterParityErrorModel(Ptr<ErrorModel> em)
 {
     NS_LOG_FUNCTION(this << em);
-    m_receiveErrorModel = em;
+    m_characterParityErrorModel = em;
 }
 
 void
@@ -330,13 +330,16 @@ SpWDevice::Receive(Ptr<Packet> packet, uint32_t ch_packet_seq_n)
     NS_LOG_FUNCTION(this << packet);
     uint16_t protocol = 0;
 
-    if (m_receiveErrorModel && m_receiveErrorModel->IsCorrupt(packet))
+    if (m_characterParityErrorModel && m_characterParityErrorModel->IsCorrupt(packet))
     {
         //
         // If we have an error model and it indicates that it is time to lose a
         // corrupted packet, don't forward this packet up, let it go.
         //
         m_phyRxDropTrace(packet);
+
+        m_channel->NotifyError(this);
+        m_machineState = ERROR_RESET;
     }
     else
     {
@@ -524,7 +527,7 @@ SpWDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber
     // If IsLinkUp() is false it means there is no channel to send any packet
     // over so we just hit the drop trace on the packet and return an error.
     //
-    if (!IsLinkUp())
+    if (!IsLinkUp() || m_machineState != RUN)
     {
         m_macTxDropTrace(packet);
         return false;
@@ -558,11 +561,11 @@ SpWDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber
 void
 SpWDevice::CheckQueue()
 {
-    if (m_txMachineState == DOWN) {
+    if (m_machineState == DOWN) {
         m_queue->Flush();
         return;
     }
-    if (m_txMachineState == READY && !m_queue->IsEmpty())
+    if (m_machineState == RUN && !m_queue->IsEmpty())
     {
         Ptr<Packet> packet = m_queue->Dequeue();
         m_snifferTrace(packet);
@@ -576,10 +579,69 @@ SpWDevice::CheckQueue()
 }
 
 void
+SpWDevice::ErrorResetSpWState()
+{
+    m_machineState = ERROR_RESET;
+    Simulator::Schedule(SPW_HALF_DELAY + SPW_DELAY, &SpWDevice::ReadySpWState, this);
+    uint8_t addr;
+    m_address.CopyTo(&addr);
+}
+
+void
+SpWDevice::ErrorWaitSpWState()
+{
+    m_machineState = ERROR_WAIT;
+    Simulator::Schedule(SPW_DELAY, &SpWDevice::ReadySpWState, this);
+}
+
+void
+SpWDevice::ReadySpWState()
+{
+    uint8_t addr;
+    m_address.CopyTo(&addr);
+    m_machineState = READY;
+    stateChangeToErrorResetEventId = Simulator::Schedule(SPW_DELAY, &SpWDevice::ErrorResetSpWState, this);
+    Simulator::ScheduleNow(&SpWDevice::EstablishConnection, this);
+}
+
+void
+SpWDevice::RunSpWState()
+{
+    m_machineState = RUN;
+    Simulator::Cancel(stateChangeToErrorResetEventId);
+    uint8_t addr;
+    m_address.CopyTo(&addr);
+    NS_LOG_INFO("SPW[" <<std::to_string(addr) << "] CONNECTED!");
+}
+
+
+void
 SpWDevice::Shutdown()
 {
-    m_txMachineState = DOWN;
+    m_machineState = DOWN;
 }
+
+void SpWDevice::EstablishConnection()
+{
+    if(m_channel->LinkReady(this)) {
+        RunSpWState();
+    }
+    else if (m_machineState != ERROR_RESET) Simulator::Schedule(NanoSeconds(10), &SpWDevice::EstablishConnection, this);
+}
+
+
+void
+SpWDevice::ApproachLinkDisconnection()
+{
+    m_machineState = ERROR_RESET;
+    Simulator::Schedule(EXCHANGE_OF_SILENCE, &SpWDevice::EstablishConnection, this);
+}
+
+bool
+SpWDevice::IsReadyToConnect() {
+    return m_machineState == READY || m_machineState == RUN;
+}
+
 
 bool
 SpWDevice::SendFrom(Ptr<Packet> packet,

@@ -168,12 +168,16 @@ OstTestCase1::DoRun()
 
     // Simulator::ScheduleNow(GlobalTimerTick, ostA, ostB);
 
+    Simulator::Schedule(Seconds(1), &OstNode::start, ostA);
     Simulator::Schedule(Seconds(1),
                         &OstTestCase1::SendMsg,
                         this,
                         ostA,
                         txBuffer,
                         txBufferSize);
+
+    Simulator::Schedule(Seconds(2), &OstNode::start, ostB);
+
     Simulator::Schedule(Seconds(20), &OstTestCase1::ShutdownDevices, this);
 
     Simulator::Run();
