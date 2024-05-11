@@ -32,30 +32,36 @@ OstNode::~OstNode()
 {
 }
 
+int8_t
+OstNode::event_handler(const TransportLayerEvent e)
+{
+    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
+                         << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
+                         << ", rx: " << std::to_string(rx_window_bottom) << " "
+                         << std::to_string(rx_window_top) << " ");
+
+    switch (e)
+    {
+    case PACKET_ARRIVED_FROM_NETWORK:
+        get_packet_from_physical();
+        break;
+    case APPLICATION_PACKET_READY:
+        send_to_physical(DTA, (tx_window_top + MAX_UNACK_PACKETS - 1) % MAX_UNACK_PACKETS);
+        break;
+    case RETRANSMISSION_INTERRUPT:
+        send_to_physical(DTA, to_retr);
+        break;
+    default:
+        break;
+    }
+
+    return 0;
+}
+
 void
 OstNode::SetReceiveCallback(ReceiveCallback cb)
 {
     rx_cb = cb;
-}
-
-Ptr<SpWDevice>
-OstNode::GetSpWLayer()
-{
-    return spw_layer;
-}
-
-
-bool
-OstNode::tx_sliding_window_have_space()
-{
-    if (tx_window_top >= tx_window_bottom)
-    {
-        return tx_window_top - tx_window_bottom < WINDOW_SZ;
-    }
-    else
-    {
-        return MAX_UNACK_PACKETS - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
-    }
 }
 
 void
@@ -68,12 +74,6 @@ void
 OstNode::shutdown()
 {
     spw_layer->Shutdown();    
-}
-
-void
-OstNode::add_packet_to_rx(Ptr<Packet> p)
-{
-    rx_buffer[rx_window_bottom] = p;
 }
 
 int8_t
@@ -91,55 +91,63 @@ OstNode::add_packet_to_tx(Ptr<Packet> p)
 }
 
 void
+OstNode::add_packet_to_rx(Ptr<Packet> p)
+{
+    rx_buffer[rx_window_bottom] = p;
+}
+
+Ptr<SpWDevice>
+OstNode::GetSpWLayer()
+{
+    return spw_layer;
+}
+
+void
 OstNode::send_to_application(Ptr<Packet> packet)
 {
     rx_cb(simulator_id, packet);
 };
 
 int8_t
-OstNode::send_to_physical(SegmentType t, uint8_t seq_n)
+OstNode::get_packet_from_application()
+{
+    uint8_t* buff = new uint8_t[200];
+    uint8_t t = 1;
+    buff[0] = 1;
+    for (int i = 0; i < 129; ++i)
+    {
+        buff[i] = t * (t + 1);
+        t += buff[i];
+    }
+    return 0;
+}
+
+int8_t
+OstNode::send_to_physical(SegmentFlag t, uint8_t seq_n)
 {
     OstHeader header;
-    if (t == DATA)
+    if (t == ACK)
+    {
+        Ptr<Packet> p = Create<Packet>();
+        header.set_payload_len(0);
+        header.set_seq_number(seq_n);
+        header.set_flag(ACK);
+        header.set_src_addr(-1);
+        p->AddHeader(header);
+        spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
+    }
+    else
     {
         Ptr<Packet> p = tx_buffer[seq_n]->Copy();
         header.set_payload_len(p->GetSize());
         header.set_seq_number(seq_n);
-        header.set_type(DATA);
+        header.set_flag(DTA);
         header.set_src_addr(-1);
         p->AddHeader(header);
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
         if(queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0) NS_LOG_ERROR("timer error");
     }
-    else if (t == ACK)
-    {
-        Ptr<Packet> p = Create<Packet>();
-        header.set_payload_len(0);
-        header.set_seq_number(seq_n);
-        header.set_type(ACK);
-        header.set_src_addr(-1);
-        p->AddHeader(header);
-        spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
-    }
     return 0;
-}
-
-bool
-OstNode::in_tx_window(uint8_t seq_n)
-{
-    return (tx_window_top >= tx_window_bottom && seq_n >= tx_window_bottom &&
-            seq_n < tx_window_top) ||
-           (tx_window_bottom > tx_window_top &&
-            (seq_n >= tx_window_bottom || seq_n < tx_window_top));
-}
-
-bool
-OstNode::in_rx_window(uint8_t seq_n)
-{
-    return (rx_window_top >= rx_window_bottom && seq_n >= rx_window_bottom &&
-            seq_n < rx_window_top) ||
-           (rx_window_bottom > rx_window_top &&
-            (seq_n >= rx_window_bottom || seq_n < rx_window_top));
 }
 
 int8_t
@@ -176,44 +184,36 @@ OstNode::get_packet_from_physical()
     return 0;
 }
 
-int8_t
-OstNode::get_packet_from_application()
+bool
+OstNode::tx_sliding_window_have_space()
 {
-    uint8_t* buff = new uint8_t[200];
-    uint8_t t = 1;
-    buff[0] = 1;
-    for (int i = 0; i < 129; ++i)
+    if (tx_window_top >= tx_window_bottom)
     {
-        buff[i] = t * (t + 1);
-        t += buff[i];
+        return tx_window_top - tx_window_bottom < WINDOW_SZ;
     }
-    return 0;
+    else
+    {
+        return MAX_UNACK_PACKETS - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
+    }
 }
 
-int8_t
-OstNode::event_handler(const TransportLayerEvent e)
+
+bool
+OstNode::in_tx_window(uint8_t seq_n)
 {
-    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
-                         << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
-                         << ", rx: " << std::to_string(rx_window_bottom) << " "
-                         << std::to_string(rx_window_top) << " ");
+    return (tx_window_top >= tx_window_bottom && seq_n >= tx_window_bottom &&
+            seq_n < tx_window_top) ||
+           (tx_window_bottom > tx_window_top &&
+            (seq_n >= tx_window_bottom || seq_n < tx_window_top));
+}
 
-    switch (e)
-    {
-    case PACKET_ARRIVED_FROM_NETWORK:
-        get_packet_from_physical();
-        break;
-    case APPLICATION_PACKET_READY:
-        send_to_physical(DATA, (tx_window_top + MAX_UNACK_PACKETS - 1) % MAX_UNACK_PACKETS);
-        break;
-    case RETRANSMISSION_INTERRUPT:
-        send_to_physical(DATA, to_retr);
-        break;
-    default:
-        break;
-    }
-
-    return 0;
+bool
+OstNode::in_rx_window(uint8_t seq_n)
+{
+    return (rx_window_top >= rx_window_bottom && seq_n >= rx_window_bottom &&
+            seq_n < rx_window_top) ||
+           (rx_window_bottom > rx_window_top &&
+            (seq_n >= rx_window_bottom || seq_n < rx_window_top));
 }
 
 bool
@@ -235,17 +235,16 @@ OstNode::network_layer_handler(Ptr<NetDevice> dev,
     return true;
 }
 
+
 std::string
-OstNode::segment_type_name(SegmentType t)
+OstNode::segment_type_name(SegmentFlag t)
 {
     switch (t)
     {
     case ACK:
         return "ACK";
-    case DATA:
-        return "DATA";
     default:
-        return "unknown type";
+        return "DATA";
     }
 }
 
