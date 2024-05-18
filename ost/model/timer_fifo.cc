@@ -18,6 +18,8 @@ namespace ns3 {
 
     void TimerFifo::set_callback(TimerHandleCallback cb) {upper_handler = cb;}
 
+    void init_hw_timer() { ; /*register and enable timer interrupt*/ } 
+
     bool TimerFifo::is_queue_have_space() {
         return ((head + 1) % (MAX_UNACK_PACKETS + 1)) != tail;
     }
@@ -41,7 +43,7 @@ namespace ns3 {
 
 
 
-    int8_t TimerFifo::pop_timer(uint8_t seq_n, nsecs_t& duration_to_set) {
+    int8_t TimerFifo::pop_timer(uint8_t seq_n, micros_t& duration_to_set) {
         NS_LOG_FUNCTION("pop timer " << std::to_string(seq_n));
 
         if (tail == head) {
@@ -55,7 +57,7 @@ namespace ns3 {
                 move_tail();
                 duration_to_set = 0;
             } else {
-                nsecs_t r = get_hard_timer_left_time();
+                micros_t r = get_hard_timer_left_time();
                 move_tail();
                 timers_sum -= data[tail].second;
                 data[tail].second += r;
@@ -71,7 +73,7 @@ namespace ns3 {
             while(data[t_id].first != seq_n && t_id != head) t_id = (t_id + 1) % (MAX_UNACK_PACKETS + 1);
             if(t_id == head) return -1;
 
-            nsecs_t r = data[t_id].second;
+            micros_t r = data[t_id].second;
             uint8_t i = t_id;
             while((i + 1) % (MAX_UNACK_PACKETS + 1) != head) {
                 data[i] = data[(i + 1) % (MAX_UNACK_PACKETS + 1)];
@@ -88,7 +90,7 @@ namespace ns3 {
         return 0;
     }
 
-    int8_t TimerFifo::push_timer(uint8_t seq_n, nsecs_t duration, nsecs_t& duration_to_set) {
+    int8_t TimerFifo::push_timer(uint8_t seq_n, micros_t duration, micros_t& duration_to_set) {
         if (!is_queue_have_space() || duration > MAX_TIMER_DURATION) {
             return -1;
         }
@@ -96,12 +98,12 @@ namespace ns3 {
             data[head] = std::make_pair(seq_n, duration);
             duration_to_set = duration;
         } else {
-            nsecs_t left = get_hard_timer_left_time();
+            micros_t left = get_hard_timer_left_time();
             data[head] = std::make_pair(seq_n, duration - left - timers_sum);
             timers_sum += data[head].second;
             duration_to_set = 0;
         }
-        nsecs_t r = data[head].second;
+        micros_t r = data[head].second;
         move_head();
         return 0;
     }
@@ -120,7 +122,7 @@ namespace ns3 {
             }
 
         }
-        nsecs_t left = Simulator::GetDelayLeft(last_timer.e_id).GetMicroSeconds();
+        micros_t left = Simulator::GetDelayLeft(last_timer.e_id).GetMicroSeconds();
         os << "\n tail=" << std::to_string(tail) << ", head=" << std::to_string(head) <<  ", sum=" << std::to_string(timers_sum) << ", left_in_hw=" << std::to_string(left) << "\n";
     }
 
@@ -131,7 +133,7 @@ namespace ns3 {
         return os;
     }
 
-    nsecs_t TimerFifo::get_hard_timer_left_time() {
+    micros_t TimerFifo::get_hard_timer_left_time() {
         /**
         * @note Can not be implemented in 1892VM15F, because there isn't way to get state
         * of SCOUNT in interval timers.
@@ -151,8 +153,8 @@ namespace ns3 {
         return micros;
     }
 
-    int8_t TimerFifo::add_new_timer(uint8_t seq_n, const nsecs_t duration) {
-        nsecs_t to_set;
+    int8_t TimerFifo::add_new_timer(uint8_t seq_n, const micros_t duration) {
+        micros_t to_set;
         int8_t r = push_timer(seq_n, duration, to_set);
         if(r != 0) return -1;
         if(to_set != 0) {
@@ -164,7 +166,7 @@ namespace ns3 {
 
     int8_t TimerFifo::cancel_timer(uint8_t seq_n) {
         int8_t was_in_hw = seq_n == data[tail].first; // if is timer that was on hw, remove from hw first
-        nsecs_t to_set;
+        micros_t to_set;
         int8_t r = pop_timer(seq_n, to_set);
         if(r != 0) return -1;
         NS_LOG_LOGIC("NODE[] canceled timer{" << std::to_string(seq_n) <<  "} for " << std::to_string(last_timer.val) << " microseconds: \n" << *this);
@@ -180,7 +182,7 @@ namespace ns3 {
     void TimerFifo::timer_interrupt_handler() {
         uint8_t seq_n = data[tail].first;
         NS_LOG_LOGIC("timer is up (" << std::to_string(seq_n) <<  ")");
-        nsecs_t to_set;
+        micros_t to_set;
         int8_t r = pop_timer(seq_n, to_set);
         if(r == 0 && to_set != 0) {
             activate_timer(to_set);
@@ -188,7 +190,7 @@ namespace ns3 {
         upper_handler(seq_n);
     }
 
-    int8_t TimerFifo::activate_timer(const nsecs_t duration) {
+    int8_t TimerFifo::activate_timer(const micros_t duration) {
         last_timer.e_id = Simulator::Schedule(
                 MicroSeconds(duration),
                 &TimerFifo::timer_interrupt_handler,

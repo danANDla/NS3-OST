@@ -18,14 +18,14 @@
 * @typedef NanoSeconds
 * @brief Целочисленный беззнаковый тип наносекунды
 */
-typedef uint32_t nsecs_t;
+typedef uint32_t micros_t;
 
 /**
 * @ingroup Timer
 * @brief основная частота в кГц
 */
 static const uint32_t CPU_FREQ = 32768; 
-static const nsecs_t MAX_TIMER_DURATION = 16843000;
+static const micros_t MAX_TIMER_DURATION = 16843000;
 
 namespace ns3 {
 
@@ -89,7 +89,7 @@ typedef struct {
 class TimerFifo {
     struct Timer {
         EventId e_id;
-        nsecs_t val;
+        micros_t val;
     };
 
     public:
@@ -106,7 +106,7 @@ class TimerFifo {
          * \param duration
          * \return 1 if timer added succesfully
          */
-        int8_t add_new_timer(uint8_t seq_n, nsecs_t duration);
+        int8_t add_new_timer(uint8_t seq_n, micros_t duration);
 
         /**
          * Cancel timer that was added to q.
@@ -117,6 +117,8 @@ class TimerFifo {
         int8_t cancel_timer(uint8_t seq_n);
 
         void set_callback(TimerHandleCallback cb);
+
+        void init_hw_timer();
     private:
         void move_head();
         void rmove_head();
@@ -132,7 +134,7 @@ class TimerFifo {
          * \param ch Ptr to the value that should be set in hw timer (0 or duration).
          * \return 1 if timer pushed succesfully
          */
-        int8_t push_timer(uint8_t seq_n, nsecs_t duration, nsecs_t& duration_to_set);
+        int8_t push_timer(uint8_t seq_n, micros_t duration, micros_t& duration_to_set);
 
         /**
          * Pop timer to queue.
@@ -141,17 +143,17 @@ class TimerFifo {
          * \param ch Ptr to the value that should be set in hw timer. 0, if there isn't tiemrs left in q
          * \return 1 if timer poped succesfully
          */
-        int8_t pop_timer(uint8_t seq_n, nsecs_t& duration_to_set);
+        int8_t pop_timer(uint8_t seq_n, micros_t& duration_to_set);
 
-        nsecs_t get_hard_timer_left_time();
-        int8_t activate_timer(const nsecs_t duration);
+        micros_t get_hard_timer_left_time();
+        int8_t activate_timer(const micros_t duration);
         void timer_interrupt_handler();
 
-        std::pair<uint8_t, nsecs_t> data[MAX_UNACK_PACKETS + 1];
+        std::pair<uint8_t, micros_t> data[MAX_UNACK_PACKETS + 1];
         uint16_t head;
         uint16_t tail;
         uint16_t window_sz;
-        nsecs_t timers_sum;
+        micros_t timers_sum;
         struct Timer last_timer;
         HardwareTimer hw;
         TimerHandleCallback upper_handler;
