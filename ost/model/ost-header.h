@@ -10,9 +10,11 @@
 namespace ns3 {
 
 typedef enum {
-    DATA = 0,
-    ACK = 1
-} SegmentType;
+    ACK,
+    SYN,
+    RST,
+    DTA // virtual
+} SegmentFlag;
 
 class OstHeader: public Header {
     typedef uint8_t FlagOctet;
@@ -34,10 +36,15 @@ class OstHeader: public Header {
         void set_payload_len(uint8_t);
         uint8_t get_payload_len();
 
-        void set_type(SegmentType type);
+        void set_flag(SegmentFlag flag);
+        void unset_flat(SegmentFlag flag);
+
         bool is_ack();
+        bool is_syn();
+        bool is_rst();
+        bool is_dta();
     private:
-        FlagOctet flag;
+        FlagOctet flags;
         uint8_t seq_number;
         uint8_t source_addr;
         uint8_t payload_length;

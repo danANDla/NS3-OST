@@ -23,7 +23,7 @@ namespace ns3
     void
     OstHeader::Print(std::ostream& os) const
     {
-        os << "flags: " << std::to_string(flag) <<  ", seq_n: " << std::to_string(seq_number)<< ", payload_length: " << std::to_string(payload_length)  << ", src arddr: " << std::to_string(source_addr);
+        os << "flags: " << std::to_string(flags) <<  ", seq_n: " << std::to_string(seq_number)<< ", payload_length: " << std::to_string(payload_length)  << ", src arddr: " << std::to_string(source_addr);
     }
 
     uint32_t
@@ -37,7 +37,7 @@ namespace ns3
     {
         Buffer::Iterator i = start;
 
-        i.WriteU8(flag);
+        i.WriteU8(flags);
         i.WriteU8(source_addr);
         i.WriteU8(seq_number);
         i.WriteU8(payload_length);
@@ -47,7 +47,7 @@ namespace ns3
     OstHeader::Deserialize(Buffer::Iterator start)
     {
         Buffer::Iterator i = start;
-        flag = i.ReadU8();
+        flags = i.ReadU8();
         source_addr = i.ReadU8();
         seq_number = i.ReadU8();
         payload_length = i.ReadU8();
@@ -75,11 +75,34 @@ namespace ns3
         return payload_length;
     }
 
-    void OstHeader::set_type(SegmentType type) {
-        if(type == ACK) flag = 1;
-        else flag = 0;
+    void OstHeader::set_flag(SegmentFlag flag) {
+        switch (flag)
+        {
+        case ACK:
+            flags |= 0b00000001;
+            break;
+        case SYN:
+            flags |= 0b00000010;
+            break;
+        case RST:
+            flags |= 0b00000100;
+            break;
+        default:
+            flags &= 0b11111000;
+            break;
+        }
     }
+
     bool OstHeader::is_ack() {
-        return flag == 1;
+        return flags & 0b00000001;
+    }
+    bool OstHeader::is_syn() {
+        return flags & 0b00000010;
+    }
+    bool OstHeader::is_rst() {
+        return flags & 0b00000100;
+    }
+    bool OstHeader::is_dta() {
+        return flags & 0b00000000 == 0;
     }
 }
