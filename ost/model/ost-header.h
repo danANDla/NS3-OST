@@ -20,6 +20,19 @@ class OstHeader: public Header {
     typedef uint8_t FlagOctet;
 
     public:
+        OstHeader()
+            : flags(0),
+            seq_number(0),
+            source_addr(0),
+            payload_length(0)
+            {};
+        OstHeader(uint8_t seq_n, uint8_t addr, uint8_t len)
+            : seq_number(seq_n),
+            source_addr(addr),
+            payload_length(len)
+            {};
+        ~OstHeader();
+
         static TypeId GetTypeId();
         TypeId GetInstanceTypeId() const override;
         void Print(std::ostream& os) const override;
@@ -47,7 +60,7 @@ class OstHeader: public Header {
         FlagOctet flags;
         uint8_t seq_number;
         uint8_t source_addr;
-        uint8_t payload_length;
+        uint16_t payload_length;
 };
 
 }
