@@ -1,4 +1,5 @@
 #include "ost_node.h"
+#include "ost_socket.h"
 
 #include "ns3/log.h"
 #include "ns3/simulator.h"
@@ -12,7 +13,7 @@ namespace ns3
 
 NS_LOG_COMPONENT_DEFINE("OstNode");
 
-OstNode::OstNode(Ptr<SpWDevice> dev)
+OstNode::OstNode(Ptr<SpWDevice> dev, int8_t mode)
     : tx_window_bottom(0),
       tx_window_top(0),
       rx_window_bottom(0),
@@ -21,11 +22,12 @@ OstNode::OstNode(Ptr<SpWDevice> dev)
       rx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
       acknowledged(std::vector<bool>(WINDOW_SZ)),
       queue(TimerFifo(WINDOW_SZ)),
-      spw_layer(dev)
+      spw_layer(dev),
+      ports(std::vector<OstSocket>(PORTS_NUMBER, OstSocket(self_address, this)))
 {
     queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
     spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
-    spw_layer->GetAddress().CopyTo(&simulator_id);
+    spw_layer->GetAddress().CopyTo(&self_address);
 }
 
 OstNode::~OstNode()
@@ -35,7 +37,7 @@ OstNode::~OstNode()
 int8_t
 OstNode::event_handler(const TransportLayerEvent e)
 {
-    NS_LOG_LOGIC("NODE[" << std::to_string(simulator_id) << "] event: " << event_name(e) << " tx: "
+    NS_LOG_LOGIC("NODE[" << std::to_string(self_address) << "] event: " << event_name(e) << " tx: "
                          << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
                          << ", rx: " << std::to_string(rx_window_bottom) << " "
                          << std::to_string(rx_window_top) << " ");
@@ -58,6 +60,7 @@ OstNode::event_handler(const TransportLayerEvent e)
     return 0;
 }
 
+
 void
 OstNode::SetReceiveCallback(ReceiveCallback cb)
 {
@@ -65,7 +68,7 @@ OstNode::SetReceiveCallback(ReceiveCallback cb)
 }
 
 void
-OstNode::start()
+OstNode::start(int8_t socket_use)
 {
     spw_layer->ErrorResetSpWState();
 }
@@ -73,12 +76,15 @@ OstNode::start()
 void
 OstNode::shutdown()
 {
-    spw_layer->Shutdown();    
+    spw_layer->Shutdown();
 }
 
 int8_t
-OstNode::add_packet_to_tx(Ptr<Packet> p)
+OstNode::send_packet(uint8_t address, const uint8_t * buffer, uint32_t size)
 {
+    if(size > MAX_SPW_PACKET_SZ) return -2;
+
+    Ptr<Packet> p = Create<Packet>(buffer, size);
     if (tx_sliding_window_have_space())
     {
         acknowledged[tx_window_top] = false;
@@ -87,7 +93,7 @@ OstNode::add_packet_to_tx(Ptr<Packet> p)
         return 0;
     }
     NS_LOG_ERROR("sliding window run out of space");
-    return 1;
+    return -1;
 }
 
 void
@@ -95,6 +101,63 @@ OstNode::add_packet_to_rx(Ptr<Packet> p)
 {
     rx_buffer[rx_window_bottom] = p;
 }
+
+
+int8_t
+OstNode::open_connection(uint8_t addr, OstSocket::Mode mode)
+{
+    if (addr == self_address)
+        return -1;
+
+    OstSocket sk = OstSocket(self_address, this);
+    int8_t r = get_socket(addr, sk);
+    if (r != 1) // create new
+    {
+        int8_t r = aggregate_socket(addr);
+        if (r != -1)
+            ports[r].open(mode);
+    }
+    else
+    {
+        if (sk.get_state() == OstSocket::OPEN)
+            return 0; // already opened
+        sk.open(mode);
+    }
+    return 1;
+}
+
+int8_t
+OstNode::get_socket(uint8_t addr, OstSocket& sk)
+{
+    for (int i = 0; i < PORTS_NUMBER; ++i)
+    {
+        if (ports[i].get_address() == addr)
+        {
+            sk = ports[i];
+            return 1;
+        }
+    }
+    return -1;
+}
+
+int8_t
+OstNode::aggregate_socket(uint8_t address)
+{
+    for (int i = 0; i < PORTS_NUMBER; ++i)
+    {
+        if (ports[i].get_address() == self_address)
+        {
+            ports[i].set_address(address);
+            return i;
+        }
+    }
+    return -1;
+}
+
+int8_t delete_socket(uint8_t address);
+
+int8_t close();
+uint8_t get_address();
 
 Ptr<SpWDevice>
 OstNode::GetSpWLayer()
@@ -105,7 +168,7 @@ OstNode::GetSpWLayer()
 void
 OstNode::send_to_application(Ptr<Packet> packet)
 {
-    rx_cb(simulator_id, packet);
+    rx_cb(self_address, packet);
 };
 
 int8_t
@@ -145,7 +208,8 @@ OstNode::send_to_physical(SegmentFlag t, uint8_t seq_n)
         header.set_src_addr(-1);
         p->AddHeader(header);
         spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
-        if(queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0) NS_LOG_ERROR("timer error");
+        if (queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0)
+            NS_LOG_ERROR("timer error");
     }
     return 0;
 }
@@ -196,7 +260,6 @@ OstNode::tx_sliding_window_have_space()
         return MAX_UNACK_PACKETS - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
     }
 }
-
 
 bool
 OstNode::in_tx_window(uint8_t seq_n)
