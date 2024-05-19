@@ -86,7 +86,8 @@ typedef struct {
  * @var TimerFifo::last_timer
  * Продлжительность таймера, который сейчас тикает.
  */
-class TimerFifo {
+class TimerFifo : public SimpleRefCount<TimerFifo>
+{
     struct Timer {
         EventId e_id;
         micros_t val;

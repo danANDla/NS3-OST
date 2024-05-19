@@ -23,7 +23,7 @@ OstNode::OstNode(Ptr<SpWDevice> dev, int8_t mode)
       acknowledged(std::vector<bool>(WINDOW_SZ)),
       queue(TimerFifo(WINDOW_SZ)),
       spw_layer(dev),
-      ports(std::vector<OstSocket>(PORTS_NUMBER, OstSocket(self_address, this)))
+      ports(std::vector<Ptr<OstSocket>> (PORTS_NUMBER, nullptr))
 {
     queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
     spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
@@ -60,6 +60,21 @@ OstNode::event_handler(const TransportLayerEvent e)
     return 0;
 }
 
+int8_t
+OstNode::add_packet_to_tx(Ptr<Packet> p)
+{
+    if (tx_sliding_window_have_space())
+    {
+        acknowledged[tx_window_top] = 0;
+
+        tx_buffer[tx_window_top] = p;
+        OstHeader header = OstHeader(tx_window_top, self_address, p->GetSize());
+        tx_buffer[tx_window_top]->AddHeader(header);
+        tx_window_top = (tx_window_top + 1) % WINDOW_SZ;
+        return 1;
+    }
+    return -1;
+}
 
 void
 OstNode::SetReceiveCallback(ReceiveCallback cb)
@@ -68,7 +83,7 @@ OstNode::SetReceiveCallback(ReceiveCallback cb)
 }
 
 void
-OstNode::start(int8_t socket_use)
+OstNode::start()
 {
     spw_layer->ErrorResetSpWState();
 }
@@ -77,6 +92,53 @@ void
 OstNode::shutdown()
 {
     spw_layer->Shutdown();
+}
+
+void
+OstNode::add_packet_to_rx(Ptr<Packet> p)
+{
+    rx_buffer[rx_window_bottom] = p;
+}
+
+
+int8_t
+OstNode::open_connection(uint8_t addr)
+{
+    if (addr == self_address)
+        return -1;
+
+    Ptr<OstSocket> sk;
+    int8_t r = get_socket(addr, sk);
+    if (r != 1) // create new
+    {
+        int8_t r = aggregate_socket(addr);
+        if (r != -1)
+            ports[r]->open(OstSocket::Mode::CONNECTIONLESS);
+    }
+    else
+    {
+        if (sk->get_state() == OstSocket::OPEN)
+            return 0; // already opened
+        sk->open(OstSocket::Mode::CONNECTIONLESS);
+    }
+    return 1;
+}
+
+int8_t
+OstNode::close_connection(uint8_t addr)
+{
+    if(addr == self_address)
+        return -1;
+
+    for (int i = 0; i < PORTS_NUMBER; ++i)
+    {
+        if (ports[i]->get_address() == addr)
+        {
+            ports[i]->close();
+            return 1;
+        }
+    }
+    return 0;
 }
 
 int8_t
@@ -96,42 +158,18 @@ OstNode::send_packet(uint8_t address, const uint8_t * buffer, uint32_t size)
     return -1;
 }
 
-void
-OstNode::add_packet_to_rx(Ptr<Packet> p)
-{
-    rx_buffer[rx_window_bottom] = p;
-}
-
-
 int8_t
-OstNode::open_connection(uint8_t addr, OstSocket::Mode mode)
+OstNode::receive_packet(const uint8_t* buffer, uint32_t& received_sz)
 {
-    if (addr == self_address)
-        return -1;
-
-    OstSocket sk = OstSocket(self_address, this);
-    int8_t r = get_socket(addr, sk);
-    if (r != 1) // create new
-    {
-        int8_t r = aggregate_socket(addr);
-        if (r != -1)
-            ports[r].open(mode);
-    }
-    else
-    {
-        if (sk.get_state() == OstSocket::OPEN)
-            return 0; // already opened
-        sk.open(mode);
-    }
-    return 1;
+    return -1;
 }
 
 int8_t
-OstNode::get_socket(uint8_t addr, OstSocket& sk)
+OstNode::get_socket(uint8_t addr, Ptr<OstSocket>& sk)
 {
     for (int i = 0; i < PORTS_NUMBER; ++i)
     {
-        if (ports[i].get_address() == addr)
+        if (ports[i]->get_address() == addr)
         {
             sk = ports[i];
             return 1;
@@ -145,16 +183,28 @@ OstNode::aggregate_socket(uint8_t address)
 {
     for (int i = 0; i < PORTS_NUMBER; ++i)
     {
-        if (ports[i].get_address() == self_address)
+        if (!ports[i] || ports[i]->get_address() == address)
         {
-            ports[i].set_address(address);
+            ports[i] = Create<OstSocket>(this, address, self_address, i);
+            ports[i]->set_address(address);
             return i;
         }
     }
     return -1;
 }
 
-int8_t delete_socket(uint8_t address);
+int8_t
+OstNode::delete_socket(uint8_t address)
+{
+    for (int i = 0; i < PORTS_NUMBER; ++i)
+    {
+        if (ports[i]->get_address() == address)
+        {
+            return 1;
+        }
+    }
+    return -1;
+}
 
 int8_t close();
 uint8_t get_address();

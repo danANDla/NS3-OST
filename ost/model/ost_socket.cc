@@ -87,10 +87,10 @@ OstSocket::send(Ptr<Packet> segment)
     }
 
     OstHeader seg_header;
-    segment->PeekHeader(seg_header);
+    segment->RemoveHeader(seg_header);
 
     acknowledged[tx_window_top] = 0;
-    tx_buffer[tx_window_top] = Create<Packet>(buff, seg_header.get_payload_len());
+    tx_buffer[tx_window_top] = segment->Copy();
     OstHeader header = OstHeader(tx_window_top, self_address, seg_header.get_payload_len());
     header.set_flag(DTA);
     tx_buffer[tx_window_top]->AddHeader(header);
@@ -103,7 +103,7 @@ OstSocket::send(Ptr<Packet> segment)
 }
 
 int8_t
-receive(Ptr<Packet>& segment)
+OstSocket::receive(Ptr<Packet>& segment)
 {
 }
 
@@ -124,7 +124,11 @@ OstSocket::add_to_tx(Ptr<Packet> seg, uint8_t& seq_n)
     return -1;
 }
 
-int8_t socket_event_handler(const TransportLayerEvent e, Ptr<Packet> seg, uint8_t seq_n);
+int8_t 
+OstSocket::socket_event_handler(const OstSocket::Event e, Ptr<Packet> seg, uint8_t seq_n)
+{
+    return 1;
+}
 
 uint8_t
 OstSocket::get_address() const
@@ -195,13 +199,24 @@ OstSocket::segment_arrival_event_socket_handler(Ptr<Packet> seg)
         }
         return 1;
     }
+    else
+    {
+        full_states_handler(seg);
+    }
     return -1;
 }
 
-void send_rejection(uint8_t seq_n);
-void send_syn(uint8_t seq_n);
-void send_syn_confirm(uint8_t seq_n);
-void send_confirm(uint8_t seq_n);
+void 
+OstSocket::send_rejection(uint8_t seq_n) {};
+
+void 
+OstSocket::send_syn(uint8_t seq_n) {};
+
+void
+OstSocket::send_syn_confirm(uint8_t seq_n) {};
+
+void
+OstSocket::send_confirm(uint8_t seq_n) {};
 
 int8_t
 OstSocket::send_to_physical(SegmentFlag f, uint8_t seq_n)
@@ -242,9 +257,20 @@ OstSocket::send_spw(Ptr<Packet> segment)
     spw_layer->Send(segment, addr, 0);
 }
 
-void start_close_wait_timer();
-void stop_close_wait_timer();
-void dealloc();
+void 
+OstSocket::start_close_wait_timer() {};
+
+void 
+OstSocket::stop_close_wait_timer() {};
+
+void 
+OstSocket::dealloc() {};
+
+int8_t
+OstSocket::add_to_rx(Ptr<Packet> segment)
+{
+    return -1;
+}
 
 void
 OstSocket::send_to_application(Ptr<Packet> packet)
@@ -306,7 +332,7 @@ OstSocket::state_name(State s)
 }
 
 int8_t
-OstSocket::segment_arrival_event_socket_handler(Ptr<Packet> p)
+OstSocket::full_states_handler(Ptr<Packet> p)
 {
     OstHeader hd;
     p->RemoveHeader(hd);

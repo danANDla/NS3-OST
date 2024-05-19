@@ -44,10 +44,20 @@ class OstSocket : public Object
         CLOSE_WAIT,
     } State;
 
-    OstSocket(uint8_t self_address, Ptr<OstNode> parent)
+    typedef enum
+    {
+        PACKET_ARRIVED_FROM_NETWORK = 0,
+        APPLICATION_PACKET_READY,
+        RETRANSMISSION_INTERRUPT,
+        TRANSPORT_CLK_INTERRUPT,
+    } Event;
+
+    OstSocket(Ptr<OstNode> parent, uint8_t to_addr, uint8_t self_addr, uint8_t self_port)
         : ost(parent),
           state(State::CLOSED),
-          to_address(self_address),
+          to_address(to_addr),
+          self_address(self_addr),
+          self_port(self_port),
           tx_window_bottom(0),
           tx_window_top(0),
           rx_window_bottom(0),
@@ -56,14 +66,14 @@ class OstSocket : public Object
           rx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
           acknowledged(std::vector<bool>(WINDOW_SZ)),
           queue(Create<TimerFifo>(WINDOW_SZ)){};
-    ~OstSocket();
+    ~OstSocket() {};
 
     int8_t open(Mode mode);
     int8_t close();
     int8_t send(Ptr<Packet> segment);
     int8_t receive(Ptr<Packet>& segment);
 
-    int8_t socket_event_handler(const TransportLayerEvent e, Ptr<Packet> seg, uint8_t seq_n);
+    int8_t socket_event_handler(const Event e, Ptr<Packet> seg, uint8_t seq_n);
     int8_t add_to_tx(Ptr<Packet> seg, uint8_t& seq_n);
 
     uint8_t get_address() const;
@@ -77,6 +87,7 @@ class OstSocket : public Object
     void init_socket();
 
     int8_t segment_arrival_event_socket_handler(Ptr<Packet> seg);
+    int8_t full_states_handler(Ptr<Packet> seg);
     void set_state(State);
 
     void send_rejection(uint8_t seq_n);

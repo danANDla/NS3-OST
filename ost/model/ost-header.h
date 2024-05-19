@@ -31,7 +31,7 @@ class OstHeader: public Header {
             source_addr(addr),
             payload_length(len)
             {};
-        ~OstHeader();
+        ~OstHeader() {};
 
         static TypeId GetTypeId();
         TypeId GetInstanceTypeId() const override;

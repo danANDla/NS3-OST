@@ -37,17 +37,19 @@ class OstNode : public Object
   public:
     OstNode(Ptr<SpWDevice>, int8_t mode);
     ~OstNode();
-    int8_t event_handler(const TransportLayerEvent e);
 
-    void start(int8_t socket_mode);
+    int8_t event_handler(const TransportLayerEvent e);
+    int8_t add_packet_to_tx(Ptr<Packet> p);
+
+    void start();
     void shutdown();
 
-    int8_t open_connection(uint8_t address, OstSocket::Mode mode);
+    int8_t open_connection(uint8_t address);
     int8_t close_connection(uint8_t address);
     int8_t send_packet(uint8_t address, const uint8_t* buffer, uint32_t size);
-    int8_t receive_packet(const uint8_t* buffer, uint32_t* received_sz);
+    int8_t receive_packet(const uint8_t* buffer, uint32_t& received_sz);
 
-    int8_t get_socket(uint8_t address, OstSocket& socket);
+    int8_t get_socket(uint8_t address, Ptr<OstSocket>& socket);
 
     typedef Callback<void, uint8_t, Ptr<Packet>> ReceiveCallback;
     void SetReceiveCallback(OstNode::ReceiveCallback cb);
@@ -88,7 +90,7 @@ class OstNode : public Object
     std::string event_name(TransportLayerEvent e);
     ReceiveCallback rx_cb;
 
-    std::vector<OstSocket> ports;
+    std::vector<Ptr<OstSocket>> ports;
 };
 } // namespace ns3
 

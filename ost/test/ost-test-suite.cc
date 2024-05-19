@@ -92,7 +92,7 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost, const uint8_t* buffer, uint32_t size)
 void
 OstTestCase1::SendPacket(Ptr<OstNode> ost, Ptr<Packet> p)
 {
-    if (ost->add_packet_to_tx(p) != 0)
+    if (ost->add_packet_to_tx(p) != 1)
     {
         NS_LOG_ERROR("Sliding window doesn't have space");
         return;
@@ -159,9 +159,9 @@ OstTestCase1::DoRun()
                          "for her merchandise, he traded in his prize.";
     size_t txBufferSize = sizeof(txBuffer);
 
-    Ptr<OstNode> ostA = CreateObject<OstNode>(devA);
+    Ptr<OstNode> ostA = CreateObject<OstNode>(devA, 0);
     ostA->SetReceiveCallback(MakeCallback(&OstTestCase1::Receive, this));
-    Ptr<OstNode> ostB = CreateObject<OstNode>(devB);
+    Ptr<OstNode> ostB = CreateObject<OstNode>(devB, 0);
     ostB->SetReceiveCallback(MakeCallback(&OstTestCase1::Receive, this));
 
     

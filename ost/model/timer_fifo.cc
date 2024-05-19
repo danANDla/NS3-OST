@@ -18,7 +18,7 @@ namespace ns3 {
 
     void TimerFifo::set_callback(TimerHandleCallback cb) {upper_handler = cb;}
 
-    void init_hw_timer() { ; /*register and enable timer interrupt*/ } 
+    void TimerFifo::init_hw_timer() { ; /*register and enable timer interrupt*/ } 
 
     bool TimerFifo::is_queue_have_space() {
         return ((head + 1) % (MAX_UNACK_PACKETS + 1)) != tail;
