@@ -4,6 +4,7 @@
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/spw-channel.h"
+#include "ns3/drop-tail-queue.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -18,16 +19,21 @@ OstNode::OstNode(Ptr<SpWDevice> dev, int8_t mode)
       tx_window_top(0),
       rx_window_bottom(0),
       rx_window_top(WINDOW_SZ),
-      tx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
-      rx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
-      acknowledged(std::vector<bool>(WINDOW_SZ)),
-      queue(TimerFifo(WINDOW_SZ)),
+      tx_buffer(std::vector<Ptr<Packet>>(MAX_SEQ_N)),
+      rx_buffer(std::vector<Ptr<Packet>>(MAX_SEQ_N)),
+      transmit_fifo(CreateObject<DropTailQueue<Packet>>()),
+      receive_fifo(CreateObject<DropTailQueue<Packet>>()),
+      acknowledged(std::vector<bool>(MAX_SEQ_N, false)),
+      received(std::vector<bool>(MAX_SEQ_N, false)),
+      queue(TimerFifo()),
       spw_layer(dev),
       ports(std::vector<Ptr<OstSocket>> (PORTS_NUMBER, nullptr))
 {
     queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
     spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
     spw_layer->GetAddress().CopyTo(&self_address);
+    spw_layer->SetPacketSentCallcback(MakeCallback(&OstNode::packet_sent_handler, this));
+    spw_layer->SetDeviceReadyCallback(MakeCallback(&OstNode::spw_ready_handler, this));
 }
 
 OstNode::~OstNode()
@@ -37,10 +43,18 @@ OstNode::~OstNode()
 int8_t
 OstNode::event_handler(const TransportLayerEvent e)
 {
-    NS_LOG_LOGIC("NODE[" << std::to_string(self_address) << "] event: " << event_name(e) << " tx: "
-                         << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
-                         << ", rx: " << std::to_string(rx_window_bottom) << " "
-                         << std::to_string(rx_window_top) << " ");
+    switch (e)
+    {
+    case PACKET_ARRIVED_FROM_NETWORK:
+    case APPLICATION_PACKET_READY:
+    case RETRANSMISSION_INTERRUPT:
+        NS_LOG_INFO("NODE[" << std::to_string(self_address) << "] event: " << event_name(e) << " tx: "
+                            << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
+                            << ", rx: " << std::to_string(rx_window_bottom) << " "
+                            << std::to_string(rx_window_top) << " ");
+    default:
+        break;
+    }
 
     switch (e)
     {
@@ -48,15 +62,17 @@ OstNode::event_handler(const TransportLayerEvent e)
         get_packet_from_physical();
         break;
     case APPLICATION_PACKET_READY:
-        send_to_physical(DTA, (tx_window_top + MAX_UNACK_PACKETS - 1) % MAX_UNACK_PACKETS);
+        send_to_physical(DTA, (tx_window_top + MAX_SEQ_N - 1) % MAX_SEQ_N);
         break;
     case RETRANSMISSION_INTERRUPT:
         send_to_physical(DTA, to_retr);
         break;
+    case SPW_READY:
+        peek_from_transmit_fifo();
+        break;
     default:
         break;
     }
-
     return 0;
 }
 
@@ -65,11 +81,11 @@ OstNode::add_packet_to_tx(Ptr<Packet> p)
 {
     if (tx_sliding_window_have_space())
     {
-        acknowledged[tx_window_top] = 0;
-
-        tx_buffer[tx_window_top] = p;
-        OstHeader header = OstHeader(tx_window_top, self_address, p->GetSize());
-        tx_buffer[tx_window_top]->AddHeader(header);
+        OstHeader header;
+        p->RemoveHeader(header);
+        header.set_seq_number(tx_window_top);
+        p->AddHeader(header);
+        tx_buffer[tx_window_top] = p->Copy();
         tx_window_top = (tx_window_top + 1) % WINDOW_SZ;
         return 1;
     }
@@ -93,13 +109,6 @@ OstNode::shutdown()
 {
     spw_layer->Shutdown();
 }
-
-void
-OstNode::add_packet_to_rx(Ptr<Packet> p)
-{
-    rx_buffer[rx_window_bottom] = p;
-}
-
 
 int8_t
 OstNode::open_connection(uint8_t addr)
@@ -145,17 +154,18 @@ int8_t
 OstNode::send_packet(uint8_t address, const uint8_t * buffer, uint32_t size)
 {
     if(size > MAX_SPW_PACKET_SZ) return -2;
-
     Ptr<Packet> p = Create<Packet>(buffer, size);
-    if (tx_sliding_window_have_space())
+    OstHeader header = OstHeader(0, address, size);
+    header.set_flag(DTA);
+    p->AddHeader(header);
+    add_packet_to_transmit_fifo(p->Copy());
+
+    if(spw_layer->IsReadyToTransmit()) 
     {
-        acknowledged[tx_window_top] = false;
-        tx_buffer[tx_window_top] = p;
-        tx_window_top = (tx_window_top + 1) % MAX_UNACK_PACKETS;
-        return 0;
+        Simulator::ScheduleNow(&OstNode::peek_from_transmit_fifo, this);
+        return 1;
     }
-    NS_LOG_ERROR("sliding window run out of space");
-    return -1;
+    return 0;
 }
 
 int8_t
@@ -207,13 +217,15 @@ OstNode::delete_socket(uint8_t address)
 }
 
 int8_t close();
-uint8_t get_address();
 
 Ptr<SpWDevice>
 OstNode::GetSpWLayer()
 {
     return spw_layer;
 }
+
+uint8_t 
+OstNode::get_address() const {return self_address;} 
 
 void
 OstNode::send_to_application(Ptr<Packet> packet)
@@ -245,21 +257,27 @@ OstNode::send_to_physical(SegmentFlag t, uint8_t seq_n)
         header.set_payload_len(0);
         header.set_seq_number(seq_n);
         header.set_flag(ACK);
-        header.set_src_addr(-1);
+        header.set_src_addr(self_address);
         p->AddHeader(header);
-        spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
+        bool r = spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
+        return r ? 1: 0;
     }
-    else
+    else if (t==DTA)
     {
         Ptr<Packet> p = tx_buffer[seq_n]->Copy();
-        header.set_payload_len(p->GetSize());
-        header.set_seq_number(seq_n);
-        header.set_flag(DTA);
-        header.set_src_addr(-1);
-        p->AddHeader(header);
-        spw_layer->Send(p, spw_layer->GetBroadcast(), 0);
-        if (queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0)
+        p->PeekHeader(header);
+        if(!header.is_dta())
+        {
+            NS_LOG_ERROR("wrong type of packet was in tx_buffer");
+            return -1;
+        }
+
+        bool r = spw_layer->Send(p, spw_layer->GetBroadcast(), seq_n);
+        if (queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0) {
             NS_LOG_ERROR("timer error");
+            return -1;
+        }
+        return r ? 1: 0;
     }
     return 0;
 }
@@ -268,34 +286,69 @@ int8_t
 OstNode::get_packet_from_physical()
 {
     OstHeader header;
-    rx_buffer[rx_window_bottom]->RemoveHeader(header);
-
-    if (header.is_ack())
+    Ptr<Packet> pk = receive_fifo->Dequeue();
+    pk->RemoveHeader(header);
+    uint8_t seq_n = header.get_seq_number();
+    if (header.is_ack() ||in_tx_window(seq_n))
     {
-        if (in_tx_window(header.get_seq_number()))
-        {
-            if (!acknowledged[header.get_seq_number()])
-            {
-                acknowledged[header.get_seq_number()] = true;
-                queue.cancel_timer(header.get_seq_number());
-                while (acknowledged[tx_window_bottom])
-                {
-                    tx_window_bottom = (tx_window_bottom + 1) % MAX_UNACK_PACKETS;
-                }
-            }
-        }
+        mark_packet_ack(seq_n);
     }
     else
     {
-        if (in_rx_window(header.get_seq_number()))
+        if (in_rx_window(seq_n))
+        {
+            mark_packet_receipt(seq_n, pk);
+        }
+        return send_to_physical(ACK, seq_n);
+    }
+    return 1;
+}
+
+void
+OstNode::peek_from_transmit_fifo()
+{
+    if(!transmit_fifo->IsEmpty() && tx_sliding_window_have_space())
+    {
+        Ptr<Packet> p = transmit_fifo->Dequeue();
+        add_packet_to_tx(p->Copy());
+        Simulator::ScheduleNow(&OstNode::event_handler, this, APPLICATION_PACKET_READY);
+    }
+    return;
+}
+
+int8_t
+OstNode::mark_packet_ack(uint8_t seq_n)
+{
+    if (!acknowledged[seq_n])
+    {
+        acknowledged[seq_n] = true;
+        queue.cancel_timer(seq_n);
+        while ((tx_window_bottom + 1) % MAX_SEQ_N <= tx_window_top && acknowledged[tx_window_bottom])
+        {
+            tx_window_bottom = (tx_window_bottom + 1) % MAX_SEQ_N;
+            // and dealloc mem for packet
+        }
+    }
+    return 1;
+}
+
+int8_t
+OstNode::mark_packet_receipt(uint8_t seq_n, Ptr<Packet> pkt)
+{
+    if (!received[seq_n])
+    {
+        received[seq_n] = true;
+        rx_buffer[seq_n] = pkt->Copy();
+        while (received[rx_window_bottom])
         {
             send_to_application(rx_buffer[rx_window_bottom]);
-            rx_window_bottom = (rx_window_bottom + 1) % MAX_UNACK_PACKETS;
-            rx_window_top = (rx_window_top + 1) % MAX_UNACK_PACKETS;
+            received[rx_window_top] = false;
+            rx_window_bottom = (rx_window_bottom + 1) % MAX_SEQ_N;
+            rx_window_top = (rx_window_top + 1) % MAX_SEQ_N;
+            // and dealloc mem for packet
         }
-        send_to_physical(ACK, header.get_seq_number());
     }
-    return 0;
+    return 1;
 }
 
 bool
@@ -323,6 +376,7 @@ OstNode::in_tx_window(uint8_t seq_n)
 bool
 OstNode::in_rx_window(uint8_t seq_n)
 {
+    NS_LOG_LOGIC("check for in_rx_window " << std::to_string(seq_n) << " rx_window_bot = " << std::to_string(rx_window_bottom) << ", rx_window_top" << std::to_string(rx_window_top) << "\n");
     return (rx_window_top >= rx_window_bottom && seq_n >= rx_window_bottom &&
             seq_n < rx_window_top) ||
            (rx_window_bottom > rx_window_top &&
@@ -343,11 +397,40 @@ OstNode::network_layer_handler(Ptr<NetDevice> dev,
                                uint16_t mode,
                                const Address& sender)
 {
-    add_packet_to_rx(pkt->Copy());
+    add_packet_to_receive_fifo(pkt->Copy());
     Simulator::ScheduleNow(&OstNode::event_handler, this, PACKET_ARRIVED_FROM_NETWORK);
     return true;
 }
 
+void
+OstNode::add_packet_to_transmit_fifo(Ptr<Packet> p)
+{
+    transmit_fifo->Enqueue(p);
+}
+
+
+void
+OstNode::add_packet_to_receive_fifo(Ptr<Packet> p)
+{
+    receive_fifo->Enqueue(p);
+}
+
+void
+OstNode::packet_sent_handler(uint8_t seq_n, bool dta)
+{
+    if(dta)
+    {
+    }
+    peek_from_transmit_fifo();
+    return;
+}
+
+void
+OstNode::spw_ready_handler()
+{
+   Simulator::ScheduleNow(&OstNode::event_handler, this, SPW_READY); 
+   return;
+}
 
 std::string
 OstNode::segment_type_name(SegmentFlag t)
@@ -374,6 +457,10 @@ OstNode::event_name(TransportLayerEvent e)
         return "TRANSPORT_CLK_INTERRUPT";
     case RETRANSMISSION_INTERRUPT:
         return "RETRANSMISSION_INTERRUPT";
+    case SPW_READY:
+        return "SPW_READY";
+    case PACKET_SENT:
+        return "PACKET_SENT";
     default:
         return "unknown event";
     }

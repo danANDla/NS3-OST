@@ -25,12 +25,15 @@ typedef enum
     PACKET_ARRIVED_FROM_NETWORK = 0,
     APPLICATION_PACKET_READY,
     RETRANSMISSION_INTERRUPT,
-    TRANSPORT_CLK_INTERRUPT,
+    SPW_READY,
+    PACKET_SENT,
+    TRANSPORT_CLK_INTERRUPT
 } TransportLayerEvent;
 
 class OstNode : public Object
 {
     static const uint16_t WINDOW_SZ = 10;
+    static const uint16_t MAX_SEQ_N = 256; // in fact range 0..255
     static const micros_t DURATION_RETRANSMISSON = 10000;
     static const uint8_t PORTS_NUMBER = 3;
 
@@ -39,7 +42,7 @@ class OstNode : public Object
     ~OstNode();
 
     int8_t event_handler(const TransportLayerEvent e);
-    int8_t add_packet_to_tx(Ptr<Packet> p);
+    void add_packet_to_transmit_fifo(Ptr<Packet>);
 
     void start();
     void shutdown();
@@ -53,23 +56,34 @@ class OstNode : public Object
 
     typedef Callback<void, uint8_t, Ptr<Packet>> ReceiveCallback;
     void SetReceiveCallback(OstNode::ReceiveCallback cb);
+
     Ptr<SpWDevice> GetSpWLayer();
+    uint8_t get_address() const;
 
   private:
     void send_to_application(Ptr<Packet> packet);
-    int8_t get_packet_from_application();
-    void add_packet_to_rx(Ptr<Packet>);
-
     int8_t send_to_physical(SegmentFlag t, uint8_t seq_n);
+    int8_t get_packet_from_application();
     int8_t get_packet_from_physical();
+    void peek_from_transmit_fifo();
+
+    int8_t mark_packet_ack(uint8_t seq_n);
+    int8_t mark_packet_receipt(uint8_t seq_n, Ptr<Packet>);
+
+    int8_t add_packet_to_tx(Ptr<Packet> p);
     bool tx_sliding_window_have_space();
     bool in_tx_window(uint8_t);
     bool in_rx_window(uint8_t);
+
     bool hw_timer_handler(uint8_t);
     bool network_layer_handler(Ptr<NetDevice> dev,
                                Ptr<const Packet> pkt,
                                uint16_t mode,
                                const Address& sender);
+    void add_packet_to_receive_fifo(Ptr<Packet>);
+    void packet_sent_handler(uint8_t seq_n, bool t);
+    void spw_ready_handler();
+
     int8_t aggregate_socket(uint8_t address);
     int8_t delete_socket(uint8_t address);
 
@@ -80,7 +94,11 @@ class OstNode : public Object
     uint8_t rx_window_top;
     std::vector<Ptr<Packet>> tx_buffer;
     std::vector<Ptr<Packet>> rx_buffer;
+    Ptr<Queue<Packet>> transmit_fifo;
+    Ptr<Queue<Packet>> receive_fifo;
+    
     std::vector<bool> acknowledged;
+    std::vector<bool> received;
     TimerFifo queue;
     Ptr<SpWDevice> spw_layer;
 
