@@ -9,5 +9,6 @@ build_lib(
 	model/ost_node.h
   LIBRARIES_TO_LINK ${core} 
   TEST_SOURCES 
-	test/ost-test-suite.cc
+	test/ost-simple-test.cc
+	test/ost-compare-test.cc
 )

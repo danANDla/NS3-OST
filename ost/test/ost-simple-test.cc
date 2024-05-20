@@ -1,4 +1,3 @@
-
 // Include a header file from your module to test.
 
 // An essential include is test.h
@@ -71,7 +70,6 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost, const uint8_t* buffer, uint32_t size)
     m_q = CreateObject<DropTailQueue<Packet>>();
     uint32_t maxSize = 70; // 1 << 16
     uint32_t offset = 0;
-    std::cout <<  "msgSize=" << size << ", maxPacketSz=" << maxSize << std::endl;
     while (size)
     {
         uint32_t packetSize;
@@ -84,6 +82,7 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost, const uint8_t* buffer, uint32_t size)
         offset += packetSize;
         size -= packetSize;
     }
+    NS_LOG_INFO("USER[" << std::to_string(ost->get_address()) << "] sends message of sz = " << std::to_string(size) << ", that is separated by the applicatoin level into " << std::to_string(m_q->GetCurrentSize().GetValue()) << " packets");
     Ptr<Packet> p = m_q->Dequeue();
 
     SendPacket(ost, p);
@@ -92,12 +91,9 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost, const uint8_t* buffer, uint32_t size)
 void
 OstTestCase1::SendPacket(Ptr<OstNode> ost, Ptr<Packet> p)
 {
-    if (ost->add_packet_to_tx(p) != 1)
-    {
-        NS_LOG_ERROR("Sliding window doesn't have space");
-        return;
-    }
-    Simulator::ScheduleNow(&OstNode::event_handler, ost, APPLICATION_PACKET_READY);
+    uint8_t buffer[1024*128];
+    p->CopyData(buffer, 1024*128);
+    ost->send_packet(1, buffer, p->GetSize());
     Simulator::Schedule(MicroSeconds(1), &OstTestCase1::SendPacketComplete, this, ost);
 }
 
@@ -141,8 +137,8 @@ OstTestCase1::DoRun()
     Ptr<SpWDevice> devB = CreateObject<SpWDevice>();
     Ptr<SpWChannel> channel = CreateObject<SpWChannel>();
 
-    devA->SetDataRate(DataRate("10Mbps"));
-    devB->SetDataRate(DataRate("10Mbps"));
+    devA->SetDataRate(DataRate("200Mbps"));
+    devB->SetDataRate(DataRate("200Mbps"));
 
     devA->Attach(channel);
     devA->SetAddress(Mac8Address::Allocate());
@@ -204,10 +200,10 @@ class OstTestSuite : public TestSuite
 };
 
 OstTestSuite::OstTestSuite()
-    : TestSuite("ost", UNIT)
+    : TestSuite("ost-simple", Type::UNIT)
 {
     // TestDuration for TestCase can be QUICK, EXTENSIVE or TAKES_FOREVER
-    AddTestCase(new OstTestCase1, TestCase::QUICK);
+    AddTestCase(new OstTestCase1, Duration::QUICK);
 }
 
 // Do not forget to allocate an instance of this TestSuite
