@@ -95,7 +95,7 @@ class TimerFifo : public SimpleRefCount<TimerFifo>
 
     public:
         typedef Callback<bool, uint8_t> TimerHandleCallback;
-        TimerFifo(uint16_t win_sz);
+        TimerFifo();
         ~TimerFifo();
 
         void Print(std::ostream& os) const;

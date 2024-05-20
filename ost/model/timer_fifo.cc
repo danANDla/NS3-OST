@@ -7,10 +7,9 @@
 namespace ns3 {
     NS_LOG_COMPONENT_DEFINE("TimerFifo");
 
-    TimerFifo::TimerFifo(uint16_t w_sz) :
+    TimerFifo::TimerFifo() :
         head(0),
         tail(0),
-        window_sz(w_sz),
         timers_sum(0)
     {}    
 
