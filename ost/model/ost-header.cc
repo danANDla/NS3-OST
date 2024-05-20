@@ -103,6 +103,6 @@ namespace ns3
         return flags & 0b00000100;
     }
     bool OstHeader::is_dta() {
-        return flags & 0b00000000 == 0;
+        return (flags & 0b00000111) == 0;
     }
 }
