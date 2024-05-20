@@ -26,6 +26,8 @@
 #include "ns3/address.h"
 
 #include <list>
+#include <unordered_map>
+#include <utility>
 
 namespace ns3
 {
@@ -155,7 +157,8 @@ class SpWChannel : public Channel
                                           Time duration,
                                           Time lastBitTime);
 
-    void print_transmission(Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption) const; 
+    void TransmissionComplete(Ptr<const Packet>, Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption); 
+    void PrintTransmission(Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption, uint32_t uid) const; 
 
   private:
     /** Each point to point link has exactly two net devices. */
@@ -222,6 +225,7 @@ class SpWChannel : public Channel
 
     Link m_link[N_DEVICES]; //!< Link model
     uint32_t m_cnt_packets;
+    std::unordered_map<uint32_t, EventId> m_events[2];
 };
 
 } // namespace ns3

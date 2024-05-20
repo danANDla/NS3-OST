@@ -30,6 +30,7 @@
 #include "ns3/trace-source-accessor.h"
 #include "ns3/uinteger.h"
 
+
 namespace ns3
 {
 
@@ -172,7 +173,8 @@ SpWDevice::SpWDevice()
     : m_machineState(DOWN),
       m_channel(nullptr),
       m_linkUp(false),
-      m_currentPkt(nullptr)
+      m_currentPkt(nullptr),
+      m_events(std::deque<EventId>())
 {
     NS_LOG_FUNCTION(this);
 }
@@ -246,9 +248,16 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
     Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
     Time txCompleteTime = txTime;
 
-    Simulator::Schedule(txCompleteTime,
+    OstHeader header;
+    p->PeekHeader(header);
+
+    EventId event = Simulator::Schedule(txCompleteTime,
                         &SpWDevice::TransmitComplete,
-                        this); // there isn't inter frame gap
+                        this,
+                        header.get_seq_number(),
+                        header.is_dta()); // there isn't inter frame gap
+    m_events.push_back(event);
+    NS_LOG_LOGIC("SPW[" << std::to_string(address) <<"] start transmitting | uid " << std::to_string(event.GetUid()));
 
     bool result = m_channel->TransmitStart(p, this, txTime);
     if (!result)
@@ -259,7 +268,7 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
 }
 
 void
-SpWDevice::TransmitComplete()
+SpWDevice::TransmitComplete(uint8_t seq_n, bool dta) 
 {
     NS_LOG_FUNCTION(this);
 
@@ -273,6 +282,10 @@ SpWDevice::TransmitComplete()
     m_machineState = RUN;
 
     NS_ASSERT_MSG(m_currentPkt, "SpWDevice::TransmitComplete(): m_currentPkt zero");
+
+    m_events.pop_front();
+
+    start_timer_cb(seq_n, dta);
 
     m_phyTxEndTrace(m_currentPkt);
     m_currentPkt = nullptr;
@@ -584,7 +597,13 @@ void
 SpWDevice::ErrorResetSpWState()
 {
     m_machineState = ERROR_RESET;
+    for(EventId e: m_events) {
+        Simulator::Cancel(e);
+        NS_LOG_LOGIC("SPW[" << std::to_string(address) <<"] canceling receive | uid " << std::to_string(e.GetUid()));
+    }
+
     Simulator::Schedule(SPW_HALF_DELAY + SPW_DELAY, &SpWDevice::ReadySpWState, this);
+    m_events.clear();
     uint8_t addr;
     m_address.CopyTo(&addr);
 }
@@ -614,6 +633,7 @@ SpWDevice::RunSpWState()
     uint8_t addr;
     m_address.CopyTo(&addr);
     NS_LOG_INFO("SPW[" <<std::to_string(addr) << "] CONNECTED!");
+    device_ready_cb();
 }
 
 
@@ -636,12 +656,18 @@ void
 SpWDevice::ApproachLinkDisconnection()
 {
     m_machineState = ERROR_RESET;
+    NS_LOG_INFO("SPW[" << std::to_string(address) << "] approach link disconnected");
     Simulator::Schedule(EXCHANGE_OF_SILENCE, &SpWDevice::EstablishConnection, this);
 }
 
 bool
 SpWDevice::IsReadyToConnect() {
     return m_machineState == READY || m_machineState == RUN;
+}
+
+bool
+SpWDevice::IsReadyToTransmit() {
+    return m_machineState == RUN;
 }
 
 
@@ -685,6 +711,18 @@ void
 SpWDevice::SetPromiscReceiveCallback(NetDevice::PromiscReceiveCallback cb)
 {
     m_promiscCallback = cb;
+}
+
+void
+SpWDevice::SetPacketSentCallcback(PacketSentCallback cb)
+{
+    start_timer_cb = cb;
+}
+
+void
+SpWDevice::SetDeviceReadyCallback(DeviceReadyCallback cb)
+{
+    device_ready_cb = cb;
 }
 
 bool

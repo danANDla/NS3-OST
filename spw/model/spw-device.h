@@ -31,6 +31,7 @@
 #include "ns3/traced-callback.h"
 
 #include <cstring>
+#include <deque>
 
 const uint16_t MAX_SPW_PACKET_SZ = 2000;
 
@@ -206,10 +207,17 @@ class SpWDevice : public NetDevice
     void ApproachLinkDisconnection();
     void EstablishConnection();
     bool IsReadyToConnect();
+    bool IsReadyToTransmit();
     void ErrorResetSpWState();
     void ErrorWaitSpWState();
     void ReadySpWState();
     void RunSpWState();
+
+    typedef Callback<void, uint8_t, bool> PacketSentCallback;
+    void SetPacketSentCallcback(SpWDevice::PacketSentCallback cb);
+
+    typedef Callback<void> DeviceReadyCallback;
+    void SetDeviceReadyCallback(SpWDevice::DeviceReadyCallback cb);
 
   private:
     const Time EXCHANGE_OF_SILENCE = NanoSeconds(19200); // minimumtime needed to establish connection
@@ -267,7 +275,7 @@ class SpWDevice : public NetDevice
      * The TransmitComplete method is used internally to finish the process
      * of sending a packet out on the channel.
      */
-    void TransmitComplete();
+    void TransmitComplete(uint8_t seq_n, bool is_dta);
 
     /**
      * Start transmitting packeets from queue.
@@ -453,11 +461,15 @@ class SpWDevice : public NetDevice
     NetDevice::ReceiveCallback m_rxCallback;             //!< Receive callback
     NetDevice::PromiscReceiveCallback m_promiscCallback; //!< Receive callback
                                                          //   (promisc data)
+    PacketSentCallback start_timer_cb;
+    DeviceReadyCallback device_ready_cb;
     uint32_t m_ifIndex;                                  //!< Index of the interface
     bool m_linkUp;                                       //!< Identify if the link is up or not
     TracedCallback<> m_linkChangeCallbacks;              //!< Callback for the link change event
 
     EventId stateChangeToErrorResetEventId;
+
+    std::deque<EventId> m_events;
 
     static const uint16_t DEFAULT_MTU = MAX_SPW_PACKET_SZ; //!< Default MTU
 
