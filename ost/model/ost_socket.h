@@ -65,7 +65,7 @@ class OstSocket : public Object
           tx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
           rx_buffer(std::vector<Ptr<Packet>>(WINDOW_SZ)),
           acknowledged(std::vector<bool>(WINDOW_SZ)),
-          queue(Create<TimerFifo>(WINDOW_SZ)){};
+          queue(Create<TimerFifo>()){};
     ~OstSocket() {};
 
     int8_t open(Mode mode);
