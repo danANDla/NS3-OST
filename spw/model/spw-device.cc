@@ -174,7 +174,7 @@ SpWDevice::SpWDevice()
       m_channel(nullptr),
       m_linkUp(false),
       m_currentPkt(nullptr),
-      m_events(std::deque<EventId>())
+      m_events(std::unordered_map<uint64_t, EventId>())
 {
     NS_LOG_FUNCTION(this);
 }
@@ -234,13 +234,8 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
 {
     NS_LOG_FUNCTION(this << p);
     NS_LOG_LOGIC("UID is " << p->GetUid() << ", size is " << p->GetSerializedSize());
-
-    //
-    // This function is called to start the process of transmitting a packet.
-    // We need to tell the channel that we've started wiggling the wire and
-    // schedule an event that will be executed when the transmission is complete.
-    //
     NS_ASSERT_MSG(m_machineState == RUN, "Must be RUN to transmit");
+
     m_machineState = BUSY;
     m_currentPkt = p;
     m_phyTxBeginTrace(m_currentPkt);
@@ -254,9 +249,8 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
     EventId event = Simulator::Schedule(txCompleteTime,
                         &SpWDevice::TransmitComplete,
                         this,
-                        header.get_seq_number(),
-                        header.is_dta()); // there isn't inter frame gap
-    m_events.push_back(event);
+                        p->GetUid());
+    m_events[p->GetUid()] = event;
     NS_LOG_LOGIC("SPW[" << std::to_string(address) <<"] start transmitting | uid " << std::to_string(event.GetUid()));
 
     bool result = m_channel->TransmitStart(p, this, txTime);
@@ -268,7 +262,7 @@ SpWDevice::TransmitStart(Ptr<Packet> p)
 }
 
 void
-SpWDevice::TransmitComplete(uint8_t seq_n, bool dta) 
+SpWDevice::TransmitComplete(uint64_t uint) 
 {
     NS_LOG_FUNCTION(this);
 
@@ -283,9 +277,8 @@ SpWDevice::TransmitComplete(uint8_t seq_n, bool dta)
 
     NS_ASSERT_MSG(m_currentPkt, "SpWDevice::TransmitComplete(): m_currentPkt zero");
 
-    m_events.pop_front();
+    m_events.erase(uint);
 
-    start_timer_cb(seq_n, dta);
 
     m_phyTxEndTrace(m_currentPkt);
     m_currentPkt = nullptr;
@@ -294,6 +287,7 @@ SpWDevice::TransmitComplete(uint8_t seq_n, bool dta)
     if (!p)
     {
         NS_LOG_LOGIC("No pending packets in device queue after tx complete");
+        start_timer_cb();
         return;
     }
 
@@ -542,7 +536,7 @@ SpWDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber
     // If IsLinkUp() is false it means there is no channel to send any packet
     // over so we just hit the drop trace on the packet and return an error.
     //
-    if (!IsLinkUp() || m_machineState != RUN)
+    if (!IsLinkUp())
     {
         m_macTxDropTrace(packet);
         return false;
@@ -563,7 +557,14 @@ SpWDevice::Send(Ptr<Packet> packet, const Address& dest, uint16_t protocolNumber
         //
         // If the channel is ready for transition we send the packet right now
         //
-        Simulator::ScheduleNow(&SpWDevice::CheckQueue, this);
+        if (m_machineState == RUN)
+        {
+            packet = m_queue->Dequeue();
+            m_snifferTrace(packet);
+            m_promiscSnifferTrace(packet);
+            bool ret = TransmitStart(packet);
+            return ret;
+        }
         return true;
     }
 
@@ -577,7 +578,7 @@ void
 SpWDevice::CheckQueue()
 {
     if (m_machineState == DOWN) {
-        m_queue->Flush();
+        // m_queue->Flush();
         return;
     }
     if (m_machineState == RUN && !m_queue->IsEmpty())
@@ -587,23 +588,19 @@ SpWDevice::CheckQueue()
         m_promiscSnifferTrace(packet);
         TransmitStart(packet);
     }
-    else
-    {
-        Simulator::Schedule(MicroSeconds(1), &SpWDevice::CheckQueue, this);
-    }
+    return;
 }
 
 void
 SpWDevice::ErrorResetSpWState()
 {
     m_machineState = ERROR_RESET;
-    for(EventId e: m_events) {
-        Simulator::Cancel(e);
-        NS_LOG_LOGIC("SPW[" << std::to_string(address) <<"] canceling receive | uid " << std::to_string(e.GetUid()));
+    for (auto& it: m_events) {
+        NS_LOG_LOGIC("SPW[" << std::to_string(address) <<"] canceling receive | uid " << std::to_string(it.second.GetUid()));
+        Simulator::Cancel(it.second);
     }
-
-    Simulator::Schedule(SPW_HALF_DELAY + SPW_DELAY, &SpWDevice::ReadySpWState, this);
     m_events.clear();
+    Simulator::Schedule(SPW_HALF_DELAY + SPW_DELAY, &SpWDevice::ReadySpWState, this);
     uint8_t addr;
     m_address.CopyTo(&addr);
 }
@@ -634,6 +631,7 @@ SpWDevice::RunSpWState()
     m_address.CopyTo(&addr);
     NS_LOG_INFO("SPW[" <<std::to_string(addr) << "] CONNECTED!");
     device_ready_cb();
+    CheckQueue();
 }
 
 
@@ -655,8 +653,13 @@ void SpWDevice::EstablishConnection()
 void
 SpWDevice::ApproachLinkDisconnection()
 {
-    m_machineState = ERROR_RESET;
     NS_LOG_INFO("SPW[" << std::to_string(address) << "] approach link disconnected");
+    for (auto& it: m_events) {
+        NS_LOG_LOGIC("SPW[" << std::to_string(address) <<"] canceling receive | uid " << std::to_string(it.second.GetUid()));
+        Simulator::Cancel(it.second);
+    }
+    m_events.clear();
+    m_machineState = READY;
     Simulator::Schedule(EXCHANGE_OF_SILENCE, &SpWDevice::EstablishConnection, this);
 }
 

@@ -31,7 +31,7 @@
 #include "ns3/traced-callback.h"
 
 #include <cstring>
-#include <deque>
+#include <unordered_map>
 
 const uint16_t MAX_SPW_PACKET_SZ = 2000;
 
@@ -213,7 +213,7 @@ class SpWDevice : public NetDevice
     void ReadySpWState();
     void RunSpWState();
 
-    typedef Callback<void, uint8_t, bool> PacketSentCallback;
+    typedef Callback<void> PacketSentCallback;
     void SetPacketSentCallcback(SpWDevice::PacketSentCallback cb);
 
     typedef Callback<void> DeviceReadyCallback;
@@ -275,7 +275,7 @@ class SpWDevice : public NetDevice
      * The TransmitComplete method is used internally to finish the process
      * of sending a packet out on the channel.
      */
-    void TransmitComplete(uint8_t seq_n, bool is_dta);
+    void TransmitComplete(uint64_t uid);
 
     /**
      * Start transmitting packeets from queue.
@@ -469,7 +469,7 @@ class SpWDevice : public NetDevice
 
     EventId stateChangeToErrorResetEventId;
 
-    std::deque<EventId> m_events;
+    std::unordered_map<uint64_t, EventId> m_events;
 
     static const uint16_t DEFAULT_MTU = MAX_SPW_PACKET_SZ; //!< Default MTU
 
