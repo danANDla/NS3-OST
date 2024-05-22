@@ -29,7 +29,7 @@ namespace ns3
     uint32_t
     OstHeader::GetSerializedSize() const
     {
-        return 4;
+        return 5;
     }
 
     void

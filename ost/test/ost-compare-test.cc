@@ -17,16 +17,15 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <deque>
 
-// Do not put your test classes in namespace ns3.  You may find it useful
-// to use the using directive to access the ns3 namespace directly
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("OstCompareTest");
 
-const char *file = "/home/danandla/BOTAY/space/develop/NS3OST/payloads/small";
+const char *file = "/home/danandla/BOTAY/space/develop/NS3OST/payloads/65mb";
 
-bool ReadFileToVector(const char *const fname, std::vector<char *> &message, uint64_t &total_sz)
+bool ReadFileToVector(const char *const fname, std::vector<char *> &message, size_t &total_sz)
 {
     std::ifstream inputFile(fname);
     if (!inputFile.is_open())
@@ -63,11 +62,10 @@ bool ReadFileToVector(const char *const fname, std::vector<char *> &message, uin
     // Close file when done
     inputFile.close();
     *(message[seg_number] + offset) = '\0';
-    // std::cout << "total_sz = " << total_sz << " bytes, " << i << " lines" << std::endl;
     return true;
 }
 
-bool ReadFileToBuffer(const char *const fname, char* buffer, uint64_t &total_sz)
+bool ReadFileToBuffer(const char *const fname, std::vector<uint8_t> &msg_buffer, uint64_t &total_sz)
 {
     std::ifstream inputFile(fname);
     if (!inputFile.is_open())
@@ -75,26 +73,31 @@ bool ReadFileToBuffer(const char *const fname, char* buffer, uint64_t &total_sz)
         std::cout << "Error opening file: " << fname << std::endl;
         return false;
     }
+    size_t sz = 0;
     uint64_t offset = 0;
     std::string line;
-    int i = 0;
     while (getline(inputFile, line))
     {
-        std::strcpy(buffer + offset, line.c_str());
-        *(buffer + offset + line.length()) = '\n';
-        offset += line.length() + 1;
-        total_sz += line.length() + 1;
-        i++;
+        for(char ch: line)
+        {
+            msg_buffer.push_back(ch);
+            offset++;
+            sz++;
+        }
+        msg_buffer.push_back('\n');
+        offset++;
+        sz++;
     }
     inputFile.close();
-    *(buffer + offset) = '\0';
+    msg_buffer.push_back('\0');
+    total_sz = sz;
     return true;
 }
 
 bool VerifyMsg(std::vector<char *> received_msg, const char *fname)
 {
     std::vector<char *> orig;
-    uint64_t total_sz;
+    uint64_t total_sz = 0;
     if (!ReadFileToVector(fname, orig, total_sz))
     {
         NS_LOG_ERROR("failed to read actual");
@@ -119,46 +122,53 @@ bool VerifyMsg(std::vector<char *> received_msg, const char *fname)
 bool VerifyPacketList(std::vector<Ptr<Packet>> received_msg, const char *fname)
 {
     size_t offset = 0;
-    uint8_t msg[1024*1024];
+    uint8_t msg[10*1024*1024];
     for (Ptr<Packet> i : received_msg)
     {
         i->CopyData(msg + offset, 1024 * 64);
         offset += i->GetSize();
     }
-    char buff[1024*1024];
+    char buff[10*1024*1024];
     std::memcpy(buff, msg, offset);
     bool r = buff[offset - 1] == '\0';
     if(r) std::cout << "last ch is nullterm\n";
     buff[offset] = '\0';
-    for(size_t i = 0; i < offset; ++i) std::cout << buff[i];
+    // for(size_t i = 0; i < offset; ++i) std::cout << buff[i];
     // std::cout << buff;
-    // return VerifyMsg(rcv, fname);
     std::cout << "Received size = " << offset << "\n";
+    // return VerifyMsg(rcv, fname);
     return true;
 }
 
 class OstUser : public Object
 {
 public:
-    OstUser(Ptr<OstNode> ost_obj)
+    OstUser(Ptr<OstNode> ost_obj, std::string nm)
         : ost(ost_obj),
-          q_to_send(CreateObject<DropTailQueue<Packet>>()){};
+          q_to_send(std::deque<size_t>()),
+          name(nm),
+          msg_buffer(std::vector<uint8_t>(0, 0)),
+          offs(0){};
     ~OstUser(){};
     Ptr<OstNode> GetOst() { return ost; }
 
-    void SendMsg(const char *fname);
+    void SendMsg(uint8_t to_addr, const char *fname);
     void Receive(uint8_t, Ptr<Packet> p);
     void Start() { ost->start(); }
     void Shutdown() { ost->shutdown(); }
     std::vector<Ptr<Packet>> GetReceived() { return received; }
 
 private:
-    void SendPacket(Ptr<OstNode> ost, Ptr<Packet> p);
-    void SendPacketComplete(Ptr<OstNode> ost);
+    void SendPacket(Ptr<OstNode> ost, uint8_t address, size_t sz);
+    void SendPacketComplete(Ptr<OstNode> ost, uint8_t to_addr);
 
     Ptr<OstNode> ost;
     std::vector<Ptr<Packet>> received;
-    Ptr<Queue<Packet>> q_to_send;
+    std::deque<size_t> q_to_send;
+    std::string name;
+    std::vector<uint8_t> msg_buffer;
+    size_t offs;
+    size_t msg_sz;
 };
 
 class OstCompareTestCase : public TestCase
@@ -177,31 +187,22 @@ private:
     Ptr<OstUser> userB;
 };
 
-// Add some help text to this case to describe what it is intended to test
 OstCompareTestCase::OstCompareTestCase()
-    : TestCase("Ost test case (does nothing)")
+    : TestCase("")
 {
 }
 
-// This destructor does nothing but we include it as a reminder that
-// the test case should clean up after itself
 OstCompareTestCase::~OstCompareTestCase()
 {
 }
 
-void OstUser::SendMsg(const char *fname)
+void OstUser::SendMsg(uint8_t addr, const char *fname)
 {
     uint64_t size;
-    char b [1024*1024];
-    if (!ReadFileToBuffer(fname, b, size))
+    if (!ReadFileToBuffer(fname, msg_buffer, size))
         return;
-
-    uint8_t buffer[1024*1024];
-    std::memcpy(buffer, b, size);
-
+    msg_sz = size;
     uint32_t maxSize = 64 * 1024; // 1 << 16
-    uint32_t offset = 0;
-    NS_LOG_INFO("msgSize = " << std::to_string(size) << ", maxPAcketSz="<< std::to_string(maxSize));
     while (size)
     {
         uint32_t packetSize;
@@ -209,35 +210,38 @@ void OstUser::SendMsg(const char *fname)
             packetSize = maxSize;
         else
             packetSize = size;
-        Ptr<Packet> p = Create<Packet>(buffer + offset, packetSize);
-        q_to_send->Enqueue(p);
-        offset += packetSize;
+        q_to_send.push_back(packetSize);
         size -= packetSize;
     }
-    NS_LOG_INFO("sep to " << std::to_string(q_to_send->GetCurrentSize().GetValue()) << "packets");
-    Ptr<Packet> p = q_to_send->Dequeue();
-    SendPacket(ost, p);
+    NS_LOG_INFO("USER[" << name << "] sends message of sz = " << std::to_string(msg_sz) << ", that is separated by the applicatoin level into " << std::to_string(q_to_send.size()) << " packets");
+    size_t sz = q_to_send.front();
+    q_to_send.pop_front();
+    SendPacket(ost, addr, sz);
 }
 
-void OstUser::SendPacket(Ptr<OstNode> ost, Ptr<Packet> p)
+void OstUser::SendPacket(Ptr<OstNode> ost, uint8_t to_address, size_t sz)
 {
-    ost->add_packet_to_transmit_fifo(p); 
-    Simulator::Schedule(MicroSeconds(1), &OstUser::SendPacketComplete, this, ost);
+    uint8_t buff[1024*64];
+    for(size_t i = offs; i < offs + sz; ++i) buff[i - offs] = msg_buffer[i];
+    ost->send_packet(to_address, buff, sz); 
+    offs += sz;
+    Simulator::Schedule(MicroSeconds(1), &OstUser::SendPacketComplete, this, ost, to_address);
 }
 
-void OstUser::SendPacketComplete(Ptr<OstNode> ost)
+void OstUser::SendPacketComplete(Ptr<OstNode> ost, uint8_t address)
 {
-    Ptr<Packet> p = q_to_send->Dequeue();
-    if (p)
-        SendPacket(ost, p);
+    if(q_to_send.empty()) return ;
+    size_t sz = q_to_send.front();
+    q_to_send.pop_front();
+    SendPacket(ost, address, sz);
 }
 
 void OstCompareTestCase::ShutdownDevices()
 {
-    if (!VerifyPacketList(userB->GetReceived(), file))
-    {
-        NS_LOG_ERROR("unmatched message at the end");
-    };
+    // if (!VerifyPacketList(userB->GetReceived(), file))
+    // {
+    //     NS_LOG_ERROR("unmatched message at the end");
+    // };
     userA->Shutdown();
     userB->Shutdown();
 }
@@ -245,7 +249,7 @@ void OstCompareTestCase::ShutdownDevices()
 void OstUser::Receive(uint8_t sm, Ptr<Packet> p)
 {
     NS_LOG_LOGIC("NODE[" << std::to_string(ost->get_address()) << "] received packet:" << p);
-    received.push_back(p->Copy());
+    received.push_back(p);
 }
 
 void OstCompareTestCase::DoRun()
@@ -256,8 +260,8 @@ void OstCompareTestCase::DoRun()
     Ptr<SpWDevice> devB = CreateObject<SpWDevice>();
     Ptr<SpWChannel> channel = CreateObject<SpWChannel>();
 
-    devA->SetDataRate(DataRate("10Mbps"));
-    devB->SetDataRate(DataRate("10Mbps"));
+    devA->SetDataRate(DataRate("200Mbps"));
+    devB->SetDataRate(DataRate("200Mbps"));
 
     devA->Attach(channel);
     devA->SetAddress(Mac8Address::Allocate());
@@ -269,15 +273,20 @@ void OstCompareTestCase::DoRun()
     a->AddDevice(devA);
     b->AddDevice(devB);
 
-    userA = CreateObject<OstUser>(CreateObject<OstNode>(devA, 0));
-    userA->GetOst()->SetReceiveCallback(MakeCallback(&OstUser::Receive, userA));
-
-    userB = CreateObject<OstUser>(CreateObject<OstNode>(devB, 0));
-    userB->GetOst()->SetReceiveCallback(MakeCallback(&OstUser::Receive, userB));
-
+    // ---------------TEST PARAMS---------------
     Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
     em->SetUnit(RateErrorModel::ERROR_UNIT_PACKET);
+    file = "/home/danandla/BOTAY/space/develop/NS3OST/payloads/1mb";
     em->SetRate(0.3);
+    uint16_t window = 10;
+    // ---------------TEST PARAMS---------------
+
+    userA = CreateObject<OstUser>(CreateObject<OstNode>(devA, 0, window), "A");
+    userA->GetOst()->SetReceiveCallback(MakeCallback(&OstUser::Receive, userA));
+
+    userB = CreateObject<OstUser>(CreateObject<OstNode>(devB, 0, window), "B");
+    userB->GetOst()->SetReceiveCallback(MakeCallback(&OstUser::Receive, userB));
+
     userA->GetOst()->GetSpWLayer()->SetCharacterParityErrorModel(em);
     userB->GetOst()->GetSpWLayer()->SetCharacterParityErrorModel(em);
 
@@ -285,21 +294,22 @@ void OstCompareTestCase::DoRun()
     Simulator::Schedule(MilliSeconds(1800),
                         &OstUser::SendMsg,
                         userA,
+                        1,
                         file);
 
     Simulator::Schedule(Seconds(2), &OstUser::Start, userB);
 
     Simulator::Schedule(Seconds(20), &OstCompareTestCase::ShutdownDevices, this);
 
+
     Simulator::Run();
 
     Simulator::Destroy();
+
+    channel->PrintTransmitted();
+    std::cout << "userB received "<< userB->GetReceived().size() << " packets of msg\n";
 }
 
-/**
- * \ingroup ost-tests
- * TestSuite for module ost
- */
 class OstCompareTest : public TestSuite
 {
 public:
@@ -309,13 +319,7 @@ public:
 OstCompareTest::OstCompareTest()
     : TestSuite("ost-compare", Type::UNIT)
 {
-    // TestDuration for TestCase can be QUICK, EXTENSIVE or TAKES_FOREVER
     AddTestCase(new OstCompareTestCase, Duration::QUICK);
 }
 
-// Do not forget to allocate an instance of this TestSuite
-/**
- * \ingroup ost-tests
- * Static variable for test initialization
- */
 static OstCompareTest ostTestSuite;

@@ -32,13 +32,13 @@ typedef enum
 
 class OstNode : public Object
 {
-    static const uint16_t WINDOW_SZ = 10;
     static const uint16_t MAX_SEQ_N = 256; // in fact range 0..255
-    static const micros_t DURATION_RETRANSMISSON = 10000;
+    static const micros_t DURATION_RETRANSMISSON = 300000;
     static const uint8_t PORTS_NUMBER = 3;
 
   public:
     OstNode(Ptr<SpWDevice>, int8_t mode);
+    OstNode(Ptr<SpWDevice>, int8_t mode, uint16_t window_sz);
     ~OstNode();
 
     int8_t event_handler(const TransportLayerEvent e);
@@ -81,11 +81,13 @@ class OstNode : public Object
                                uint16_t mode,
                                const Address& sender);
     void add_packet_to_receive_fifo(Ptr<Packet>);
-    void packet_sent_handler(uint8_t seq_n, bool t);
+    void packet_sent_handler();
     void spw_ready_handler();
 
     int8_t aggregate_socket(uint8_t address);
     int8_t delete_socket(uint8_t address);
+
+    uint16_t WINDOW_SZ;
 
     uint8_t to_retr;
     uint8_t tx_window_bottom;

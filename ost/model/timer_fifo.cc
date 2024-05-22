@@ -40,7 +40,10 @@ namespace ns3 {
         tail = (tail + 1) % (MAX_UNACK_PACKETS + 1);
     }
 
-
+    void TimerFifo::rmove_tail() {
+        if(tail == 0) tail = MAX_UNACK_PACKETS;
+        else tail -= 1;
+    }
 
     int8_t TimerFifo::pop_timer(uint8_t seq_n, micros_t& duration_to_set) {
         NS_LOG_FUNCTION("pop timer " << std::to_string(seq_n));
@@ -51,7 +54,7 @@ namespace ns3 {
 
         if(seq_n == data[tail].first) {
             NS_LOG_DEBUG("timer is on tail");
-            if(((tail > head) && tail == MAX_UNACK_PACKETS && head == 0) || head - tail == 1) {
+            if(((tail > head) && tail == MAX_UNACK_PACKETS && head == 0) || ((tail < head) && head - tail == 1)) {
                 NS_LOG_DEBUG("timer is the only");
                 move_tail();
                 duration_to_set = 0;
@@ -102,9 +105,8 @@ namespace ns3 {
             timers_sum += data[head].second;
             duration_to_set = 0;
         }
-        micros_t r = data[head].second;
         move_head();
-        return 0;
+        return 1;
     }
 
     void TimerFifo::Print(std::ostream& os) const {
@@ -155,12 +157,12 @@ namespace ns3 {
     int8_t TimerFifo::add_new_timer(uint8_t seq_n, const micros_t duration) {
         micros_t to_set;
         int8_t r = push_timer(seq_n, duration, to_set);
-        if(r != 0) return -1;
-        if(to_set != 0) {
+        if(r != 1) return -1;
+        if(to_set != 0)
             activate_timer(to_set);
-        }
-        NS_LOG_LOGIC("added new timer{" << std::to_string(seq_n) <<  "} for " << std::to_string(to_set) << " microseconds \n" << *this);
-        return 0;
+        else
+            NS_LOG_INFO("added new timer{" << std::to_string(seq_n) <<  "} for " << std::to_string(duration) << " microseconds");
+        return 1;
     }
 
     int8_t TimerFifo::cancel_timer(uint8_t seq_n) {
@@ -175,12 +177,12 @@ namespace ns3 {
         if(to_set != 0) {
             activate_timer(to_set);
         }
-        return 0;
+        return 1;
     }
 
     void TimerFifo::timer_interrupt_handler() {
         uint8_t seq_n = data[tail].first;
-        NS_LOG_LOGIC("timer is up (" << std::to_string(seq_n) <<  ")");
+        NS_LOG_INFO("timer is up {" << std::to_string(seq_n) <<  "}" << *this);
         micros_t to_set;
         int8_t r = pop_timer(seq_n, to_set);
         if(r == 0 && to_set != 0) {
@@ -196,7 +198,7 @@ namespace ns3 {
                 this
         );
         last_timer.val = duration;
-        NS_LOG_LOGIC("ACTIVATED timer{" << std::to_string(data[tail].first) <<  "} for " << std::to_string(last_timer.val) << " microseconds \n" << *this);
+        NS_LOG_INFO("ACTIVATED timer{" << std::to_string(data[tail].first) <<  "} for " << std::to_string(last_timer.val) << " microseconds \n");
         return 0;
     }
 }

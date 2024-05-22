@@ -27,7 +27,31 @@ OstNode::OstNode(Ptr<SpWDevice> dev, int8_t mode)
       received(std::vector<bool>(MAX_SEQ_N, false)),
       queue(TimerFifo()),
       spw_layer(dev),
-      ports(std::vector<Ptr<OstSocket>> (PORTS_NUMBER, nullptr))
+      ports(std::vector<Ptr<OstSocket>> (PORTS_NUMBER, nullptr)),
+      WINDOW_SZ(1)
+{
+    queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
+    spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
+    spw_layer->GetAddress().CopyTo(&self_address);
+    spw_layer->SetPacketSentCallcback(MakeCallback(&OstNode::packet_sent_handler, this));
+    spw_layer->SetDeviceReadyCallback(MakeCallback(&OstNode::spw_ready_handler, this));
+}
+
+OstNode::OstNode(Ptr<SpWDevice> dev , int8_t mode, uint16_t window_sz)
+    : tx_window_bottom(0),
+      tx_window_top(0),
+      rx_window_bottom(0),
+      rx_window_top(WINDOW_SZ),
+      tx_buffer(std::vector<Ptr<Packet>>(MAX_SEQ_N)),
+      rx_buffer(std::vector<Ptr<Packet>>(MAX_SEQ_N)),
+      transmit_fifo(CreateObject<DropTailQueue<Packet>>()),
+      receive_fifo(CreateObject<DropTailQueue<Packet>>()),
+      acknowledged(std::vector<bool>(MAX_SEQ_N, false)),
+      received(std::vector<bool>(MAX_SEQ_N, false)),
+      queue(TimerFifo()),
+      spw_layer(dev),
+      ports(std::vector<Ptr<OstSocket>> (PORTS_NUMBER, nullptr)),
+      WINDOW_SZ(window_sz)
 {
     queue.set_callback(MakeCallback(&OstNode::hw_timer_handler, this));
     spw_layer->SetReceiveCallback(MakeCallback(&OstNode::network_layer_handler, this));
@@ -48,6 +72,7 @@ OstNode::event_handler(const TransportLayerEvent e)
     case PACKET_ARRIVED_FROM_NETWORK:
     case APPLICATION_PACKET_READY:
     case RETRANSMISSION_INTERRUPT:
+    case SPW_READY:
         NS_LOG_INFO("NODE[" << std::to_string(self_address) << "] event: " << event_name(e) << " tx: "
                             << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
                             << ", rx: " << std::to_string(rx_window_bottom) << " "
@@ -86,7 +111,7 @@ OstNode::add_packet_to_tx(Ptr<Packet> p)
         header.set_seq_number(tx_window_top);
         p->AddHeader(header);
         tx_buffer[tx_window_top] = p->Copy();
-        tx_window_top = (tx_window_top + 1) % WINDOW_SZ;
+        tx_window_top = (tx_window_top + 1) % MAX_SEQ_N;
         return 1;
     }
     return -1;
@@ -153,7 +178,7 @@ OstNode::close_connection(uint8_t addr)
 int8_t
 OstNode::send_packet(uint8_t address, const uint8_t * buffer, uint32_t size)
 {
-    if(size > MAX_SPW_PACKET_SZ) return -2;
+    if(size > 1024*64) return -2;
     Ptr<Packet> p = Create<Packet>(buffer, size);
     OstHeader header = OstHeader(0, address, size);
     header.set_flag(DTA);
@@ -271,9 +296,8 @@ OstNode::send_to_physical(SegmentFlag t, uint8_t seq_n)
             NS_LOG_ERROR("wrong type of packet was in tx_buffer");
             return -1;
         }
-
         bool r = spw_layer->Send(p, spw_layer->GetBroadcast(), seq_n);
-        if (queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 0) {
+        if (queue.add_new_timer(seq_n, DURATION_RETRANSMISSON) != 1) {
             NS_LOG_ERROR("timer error");
             return -1;
         }
@@ -289,13 +313,13 @@ OstNode::get_packet_from_physical()
     Ptr<Packet> pk = receive_fifo->Dequeue();
     pk->RemoveHeader(header);
     uint8_t seq_n = header.get_seq_number();
-    if (header.is_ack() ||in_tx_window(seq_n))
+    if (header.is_ack() && in_tx_window(seq_n))
     {
         mark_packet_ack(seq_n);
     }
     else
     {
-        if (in_rx_window(seq_n))
+        if (header.is_dta() && in_rx_window(seq_n))
         {
             mark_packet_receipt(seq_n, pk);
         }
@@ -307,11 +331,16 @@ OstNode::get_packet_from_physical()
 void
 OstNode::peek_from_transmit_fifo()
 {
+    // NS_LOG_INFO("NODE[" << std::to_string(self_address) << "] peeking from fifo, in queue " << std::to_string(transmit_fifo->GetCurrentSize().GetValue()) << " packets\n");
     if(!transmit_fifo->IsEmpty() && tx_sliding_window_have_space())
     {
-        Ptr<Packet> p = transmit_fifo->Dequeue();
-        add_packet_to_tx(p->Copy());
-        Simulator::ScheduleNow(&OstNode::event_handler, this, APPLICATION_PACKET_READY);
+        Ptr<const Packet> p = transmit_fifo->Peek();
+        if(add_packet_to_tx(p->Copy()) != -1) {
+            Simulator::ScheduleNow(&OstNode::event_handler, this, APPLICATION_PACKET_READY);
+            transmit_fifo->Dequeue();
+            if(!transmit_fifo->IsEmpty())
+                Simulator::Schedule(MicroSeconds(10), &OstNode::peek_from_transmit_fifo, this);
+        }
     }
     return;
 }
@@ -322,12 +351,15 @@ OstNode::mark_packet_ack(uint8_t seq_n)
     if (!acknowledged[seq_n])
     {
         acknowledged[seq_n] = true;
-        queue.cancel_timer(seq_n);
-        while ((tx_window_bottom + 1) % MAX_SEQ_N <= tx_window_top && acknowledged[tx_window_bottom])
+        if(queue.cancel_timer(seq_n) != 1) {
+            NS_LOG_ERROR("error removing timer from queue");
+        };
+        while (acknowledged[tx_window_bottom] && (tx_window_bottom + 1) % MAX_SEQ_N <= tx_window_top)
         {
             tx_window_bottom = (tx_window_bottom + 1) % MAX_SEQ_N;
             // and dealloc mem for packet
         }
+        peek_from_transmit_fifo();
     }
     return 1;
 }
@@ -360,7 +392,7 @@ OstNode::tx_sliding_window_have_space()
     }
     else
     {
-        return MAX_UNACK_PACKETS - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
+        return MAX_UNACK_PACKETS - tx_window_bottom + 1 + tx_window_top < WINDOW_SZ;
     }
 }
 
@@ -386,8 +418,11 @@ OstNode::in_rx_window(uint8_t seq_n)
 bool
 OstNode::hw_timer_handler(uint8_t seq_n)
 {
-    to_retr = seq_n;
-    event_handler(RETRANSMISSION_INTERRUPT);
+    NS_LOG_INFO("NODE[" << std::to_string(self_address) << "] event: " << event_name(RETRANSMISSION_INTERRUPT) << " {" << std::to_string(seq_n) << "} tx: "
+                        << std::to_string(tx_window_bottom) << " " << std::to_string(tx_window_top)
+                        << ", rx: " << std::to_string(rx_window_bottom) << " "
+                        << std::to_string(rx_window_top) << " ");
+    Simulator::ScheduleNow(&OstNode::send_to_physical, this, DTA, seq_n);
     return true;
 }
 
@@ -416,11 +451,8 @@ OstNode::add_packet_to_receive_fifo(Ptr<Packet> p)
 }
 
 void
-OstNode::packet_sent_handler(uint8_t seq_n, bool dta)
+OstNode::packet_sent_handler()
 {
-    if(dta)
-    {
-    }
     peek_from_transmit_fifo();
     return;
 }

@@ -1,7 +1,7 @@
 #ifndef TIMER_FIFO_H
 #define TIMER_FIFO_H
  
-#define MAX_UNACK_PACKETS 10
+#define MAX_UNACK_PACKETS 255
 
 #include <inttypes.h>
 #include "ns3/event-id.h"
@@ -124,6 +124,7 @@ class TimerFifo : public SimpleRefCount<TimerFifo>
         void move_head();
         void rmove_head();
         void move_tail();
+        void rmove_tail();
         bool is_queue_have_space();
         int8_t get_number_of_timers();
 
