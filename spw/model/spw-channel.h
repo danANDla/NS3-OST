@@ -85,6 +85,12 @@ class SpWChannel : public Channel
     virtual bool TransmitStart(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime);
 
     bool TransmitComplete(Ptr<const Packet> p, Ptr<SpWDevice> src, Time txTime);
+    void HandlingArrivedComplete(Ptr<const Packet> p,
+                                     Address src,
+                                     uint8_t seq_n,
+                                     bool isAck,
+                                     uint32_t ch_packet_seq_n,
+                                     bool isReceiption);
 
     /**
      * \brief Get number of devices on this channel
@@ -111,6 +117,7 @@ class SpWChannel : public Channel
     void NotifyError(Ptr<SpWDevice> caller);
     bool LinkReady(Ptr<SpWDevice> caller);
 
+    void PrintTransmitted();
   protected:
     /**
      * \brief Get the delay associated with this channel
@@ -159,6 +166,7 @@ class SpWChannel : public Channel
 
     void TransmissionComplete(Ptr<const Packet>, Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption); 
     void PrintTransmission(Address src, uint8_t seq_n, bool isAck, uint32_t ch_packet_seq_n, bool isReceiption, uint32_t uid) const; 
+
 
   private:
     /** Each point to point link has exactly two net devices. */
@@ -226,6 +234,8 @@ class SpWChannel : public Channel
     Link m_link[N_DEVICES]; //!< Link model
     uint32_t m_cnt_packets;
     std::unordered_map<uint32_t, EventId> m_events[2];
+    size_t transmited[2];
+    size_t packets[2];
 };
 
 } // namespace ns3

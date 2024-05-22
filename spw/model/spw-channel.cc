@@ -65,6 +65,10 @@ namespace ns3
           m_events(std::unordered_map<uint32_t, EventId>())
     {
         NS_LOG_FUNCTION_NOARGS();
+        transmited[0] = 0;
+        transmited[1] = 0;
+        packets[0] = 0;
+        packets[1] = 0;
     }
 
     void
@@ -164,12 +168,31 @@ namespace ns3
                                      bool isReceiption)
     {
         uint32_t wire = src == m_link[0].m_src->GetAddress() ? 0 : 1;
-        PrintTransmission(src, seq_n, isAck, ch_packet_seq_n, isReceiption, m_events[wire][p->GetUid()].GetUid());
         m_events[wire].erase(p->GetUid());
-        Simulator::ScheduleNow(&SpWDevice::Receive,
-                               m_link[wire].m_dst,
-                               p->Copy(),
-                               m_cnt_packets);
+        transmited[wire] += p->GetSize();
+        packets[wire] ++;
+        Simulator::ScheduleNow(
+                        &SpWChannel::HandlingArrivedComplete,
+                        this,
+                        p,
+                        src,seq_n,isAck,ch_packet_seq_n,isReceiption);
+    }
+
+    void
+    SpWChannel::HandlingArrivedComplete(Ptr<const Packet> p,
+                                     Address src,
+                                     uint8_t seq_n,
+                                     bool isAck,
+                                     uint32_t ch_packet_seq_n,
+                                     bool isReceiption)
+    {
+        uint32_t wire = src == m_link[0].m_src->GetAddress() ? 0 : 1;
+        PrintTransmission(src, seq_n, isAck, ch_packet_seq_n, isReceiption, m_events[wire][p->GetUid()].GetUid());
+        Simulator::ScheduleNow(
+                        &SpWDevice::Receive,
+                        m_link[wire].m_dst,
+                        p->Copy(),
+                        m_cnt_packets);
     }
 
     bool
@@ -189,7 +212,6 @@ namespace ns3
         bool isAck = h.is_ack();
 
         uint8_t seq_n = h.get_seq_number();
-
         EventId event = Simulator::Schedule(txTime + m_delay,
                                             &SpWChannel::TransmissionComplete,
                                             this,
@@ -299,4 +321,10 @@ namespace ns3
         return ++m_cnt_packets;
     }
 
+    void
+    SpWChannel::PrintTransmitted() {
+        std::cout << " --> " << transmited[0] << " bytes, " << packets[0] << " packets\n";
+        std::cout << " <-- " << transmited[1] << " bytes, " << packets[1] << " packets\n";
+        std::cout << " total " << transmited[0] + transmited[1] << " bytes, " << packets[1] + packets[0] << "packets\n";
+    }
 } // namespace ns3
