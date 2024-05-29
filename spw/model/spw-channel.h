@@ -115,7 +115,8 @@ class SpWChannel : public Channel
     uint32_t GetCntPackets() const;
     uint32_t IncCntPackets();
     void NotifyError(Ptr<SpWDevice> caller);
-    bool LinkReady(Ptr<SpWDevice> caller);
+    void NullInLink(Ptr<SpWDevice> caller);
+    void FCTInLink(Ptr<SpWDevice> caller);
 
     void PrintTransmitted();
   protected:

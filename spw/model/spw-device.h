@@ -205,12 +205,19 @@ class SpWDevice : public NetDevice
 
     void Shutdown();
     void ApproachLinkDisconnection();
-    void EstablishConnection();
-    bool IsReadyToConnect();
+    void SendNull();
+    void ReceiveNull();
+    void SendFCT();
+    void ReceiveFCT();
+    bool IsStarted();
+    bool IsConnecting();
     bool IsReadyToTransmit();
+
     void ErrorResetSpWState();
     void ErrorWaitSpWState();
     void ReadySpWState();
+    void StartedSpWState();
+    void ConnectingSpWState();
     void RunSpWState();
 
     typedef Callback<void> PacketSentCallback;
@@ -220,7 +227,7 @@ class SpWDevice : public NetDevice
     void SetDeviceReadyCallback(SpWDevice::DeviceReadyCallback cb);
 
   private:
-    const Time EXCHANGE_OF_SILENCE = NanoSeconds(19200); // minimumtime needed to establish connection
+    const Time EXCHANGE_OF_SILENCE = NanoSeconds(850); // minimumtime needed to establish connection
     const Time SPW_DELAY = NanoSeconds(12800);
     const Time SPW_HALF_DELAY = NanoSeconds(6400);
     /**
@@ -307,6 +314,8 @@ class SpWDevice : public NetDevice
         ERROR_RESET,
         ERROR_WAIT,
         READY,
+        STARTED,
+        CONNECTING,
         RUN, /**< The transmitter is ready to begin transmission of a packet */
         BUSY   /**< The transmitter is busy transmitting a packet */
     };
@@ -468,8 +477,9 @@ class SpWDevice : public NetDevice
     TracedCallback<> m_linkChangeCallbacks;              //!< Callback for the link change event
 
     EventId stateChangeToErrorResetEventId;
-
-    std::unordered_map<uint64_t, EventId> m_events;
+    EventId sendNull;
+    EventId sendFCT;
+    std::unordered_map<uint64_t, EventId> transmit_complete_events;
 
     static const uint16_t DEFAULT_MTU = MAX_SPW_PACKET_SZ; //!< Default MTU
 

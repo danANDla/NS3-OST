@@ -249,16 +249,26 @@ namespace ns3
         Simulator::Schedule(APPROACH_TIME, &SpWDevice::ApproachLinkDisconnection, m_link[wire].m_dst);
     }
 
-    bool
-    SpWChannel::LinkReady(Ptr<SpWDevice> caller)
+    void
+    SpWChannel::NullInLink(Ptr<SpWDevice> caller)
     {
         NS_LOG_FUNCTION(this << caller);
-
         NS_ASSERT(m_link[0].m_state != INITIALIZING);
         NS_ASSERT(m_link[1].m_state != INITIALIZING);
 
         uint32_t wire = caller == m_link[0].m_src ? 0 : 1;
-        return m_link[wire].m_dst->IsReadyToConnect();
+        Simulator::Schedule(NanoSeconds(11), &SpWDevice::ReceiveNull, m_link[wire].m_dst);
+    }
+
+    void
+    SpWChannel::FCTInLink(Ptr<SpWDevice> caller)
+    {
+        NS_LOG_FUNCTION(this << caller);
+        NS_ASSERT(m_link[0].m_state != INITIALIZING);
+        NS_ASSERT(m_link[1].m_state != INITIALIZING);
+
+        uint32_t wire = caller == m_link[0].m_src ? 0 : 1;
+        Simulator::Schedule(NanoSeconds(11), &SpWDevice::ReceiveFCT, m_link[wire].m_dst);
     }
 
     std::size_t
@@ -325,6 +335,6 @@ namespace ns3
     SpWChannel::PrintTransmitted() {
         std::cout << " --> " << transmited[0] << " bytes, " << packets[0] << " packets\n";
         std::cout << " <-- " << transmited[1] << " bytes, " << packets[1] << " packets\n";
-        std::cout << " total " << transmited[0] + transmited[1] << " bytes, " << packets[1] + packets[0] << "packets\n";
+        std::cout << " total " << transmited[0] + transmited[1] << " bytes, " << packets[1] + packets[0] << " packets\n";
     }
 } // namespace ns3
