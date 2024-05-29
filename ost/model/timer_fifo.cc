@@ -150,7 +150,7 @@ namespace ns3 {
        
         int64_t nanos = Simulator::GetDelayLeft(last_timer.e_id).GetNanoSeconds();
         int64_t micros = Simulator::GetDelayLeft(last_timer.e_id).GetMicroSeconds();
-        if(nanos % 1000 > 500) return micros + 1;
+        if(nanos) return micros + 1;
         return micros;
     }
 
