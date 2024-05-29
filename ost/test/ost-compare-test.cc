@@ -273,22 +273,22 @@ void OstCompareTestCase::DoRun()
     a->AddDevice(devA);
     b->AddDevice(devB);
 
+
     // ---------------TEST PARAMS---------------
     Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
-    em->SetUnit(RateErrorModel::ERROR_UNIT_PACKET);
-    file = "/home/danandla/BOTAY/space/develop/NS3OST/payloads/1mb";
-    em->SetRate(0.3);
+    // em->SetUnit(RateErrorModel::ERROR_UNIT_PACKET);
+    file = "/home/danandla/BOTAY/space/develop/NS3OST/payloads/4mb";
+    // em->SetRate(0.8);
     uint16_t window = 10;
-    // ---------------TEST PARAMS---------------
 
     userA = CreateObject<OstUser>(CreateObject<OstNode>(devA, 0, window), "A");
     userA->GetOst()->SetReceiveCallback(MakeCallback(&OstUser::Receive, userA));
-
     userB = CreateObject<OstUser>(CreateObject<OstNode>(devB, 0, window), "B");
     userB->GetOst()->SetReceiveCallback(MakeCallback(&OstUser::Receive, userB));
 
     userA->GetOst()->GetSpWLayer()->SetCharacterParityErrorModel(em);
     userB->GetOst()->GetSpWLayer()->SetCharacterParityErrorModel(em);
+    // ---------------TEST PARAMS---------------
 
     Simulator::Schedule(MilliSeconds(1600), &OstUser::Start, userA);
     Simulator::Schedule(MilliSeconds(1800),
@@ -299,8 +299,7 @@ void OstCompareTestCase::DoRun()
 
     Simulator::Schedule(Seconds(2), &OstUser::Start, userB);
 
-    Simulator::Schedule(Seconds(20), &OstCompareTestCase::ShutdownDevices, this);
-
+    Simulator::Schedule(Seconds(200000), &OstCompareTestCase::ShutdownDevices, this);
 
     Simulator::Run();
 
