@@ -5,6 +5,7 @@ build_lib(
     model/spw-device.cc
   HEADER_FILES
 	model/spw-device.h
+	model/spw-channel.h
   LIBRARIES_TO_LINK ${core} 
   
   TEST_SOURCES 
