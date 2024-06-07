@@ -171,7 +171,8 @@ namespace ns3
         m_events[wire].erase(p->GetUid());
         transmited[wire] += p->GetSize();
         packets[wire] ++;
-        Simulator::ScheduleNow(
+        Simulator::Schedule(
+                        MilliSeconds(100),
                         &SpWChannel::HandlingArrivedComplete,
                         this,
                         p,
