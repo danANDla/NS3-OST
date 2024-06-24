@@ -277,9 +277,9 @@ void OstCompareTestCase::DoRun()
 
     // ---------------TEST PARAMS---------------
     Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
-    // em->SetUnit(RateErrorModel::ERROR_UNIT_PACKET);
+    em->SetUnit(RateErrorModel::ERROR_UNIT_PACKET);
     file = "/home/danandla/BOTAY/space/develop/NS3OST/payloads/255kb";
-    // em->SetRate(0.8);
+    em->SetRate(0.8);
     uint16_t window = 2;
 
     userA = CreateObject<OstUser>(CreateObject<OstNode>(devA, 0, window), "A");

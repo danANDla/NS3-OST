@@ -34,24 +34,24 @@ namespace ns3
 
     OstSocket::OstSocket(Ptr<OstNode> parent)
         : ost(parent),
-            state(State::CLOSED),
-            to_address(parent->GetAddress()),
-            self_port(0),
-            tx_window_bottom(0),
-            tx_window_top(0),
-            rx_window_bottom(0),
-            rx_window_top(WINDOW_SZ),
-            transmit_fifo(CreateObject<DropTailQueue<Packet>>()),
-            receive_fifo(CreateObject<DropTailQueue<Packet>>()),
-            tx_window(std::vector<Ptr<Packet>>(WINDOW_SZ)),
-            rx_window(std::vector<Ptr<Packet>>(WINDOW_SZ)),
-            acknowledged(std::vector<bool>(WINDOW_SZ)),
-            received(std::vector<bool>(WINDOW_SZ)),
-            queue(Create<TimerFifo>()),
-            aggregated(false)
-            {
-                queue->set_callback(MakeCallback(&OstSocket::timer_handler, this));
-            };
+          state(State::CLOSED),
+          to_address(parent->GetAddress()),
+          self_port(0),
+          tx_window_bottom(0),
+          tx_window_top(0),
+          rx_window_bottom(0),
+          rx_window_top(WINDOW_SZ),
+          transmit_fifo(CreateObject<DropTailQueue<Packet>>()),
+          receive_fifo(CreateObject<DropTailQueue<Packet>>()),
+          tx_window(std::vector<Ptr<Packet>>(WINDOW_SZ)),
+          rx_window(std::vector<Ptr<Packet>>(WINDOW_SZ)),
+          acknowledged(std::vector<bool>(WINDOW_SZ)),
+          received(std::vector<bool>(WINDOW_SZ)),
+          queue(Create<TimerFifo>()),
+          aggregated(false)
+    {
+        queue->set_callback(MakeCallback(&OstSocket::timer_handler, this));
+    };
 
     int8_t
     OstSocket::open(OstSocket::Mode sk_mode)
@@ -109,11 +109,10 @@ namespace ns3
         if (size > 1024 * 64)
             return -2;
         Ptr<Packet> p = Create<Packet>(buffer, size);
-        OstHeader* header = new OstHeader(0, ost->GetAddress(), size);
+        OstHeader *header = new OstHeader(0, ost->GetAddress(), size);
         header->set_flag(DTA);
         header->set_payload_len(size);
         header->set_src_addr(ost->GetAddress());
-        std::cout << "header is " << std::to_string(header->get_payload_len()) << " , size is " << std::to_string(size)  <<  " \n";
         p->AddHeader(*header);
         transmit_fifo->Enqueue(p->Copy());
         if (spw_layer->IsReadyToTransmit())
@@ -177,7 +176,6 @@ namespace ns3
     void
     OstSocket::SetAddress(uint8_t addr)
     {
-        std::cout << "setting address " << std::to_string(addr)  << "\n";
         to_address = addr;
     }
 
@@ -200,7 +198,7 @@ namespace ns3
     }
 
     void
-    OstSocket::SetAggregated(bool aggr) 
+    OstSocket::SetAggregated(bool aggr)
     {
         aggregated = aggr;
     }
@@ -320,7 +318,10 @@ namespace ns3
             }
             send_spw(tx_window[seq_n]);
             if (queue->add_new_timer(seq_n, DURATION_RETRANSMISSON) != 1)
+            {
+                NS_LOG_ERROR("error adding timer\n");
                 return -1;
+            }
         }
         return 1;
     }
@@ -551,8 +552,10 @@ namespace ns3
     }
 
     bool
-    OstSocket::timer_handler(uint8_t seq_n) {
+    OstSocket::timer_handler(uint8_t seq_n)
+    {
         socket_event_handler(RETRANSMISSION_INTERRUPT, nullptr, seq_n);
+        return true;
     }
 
     void
