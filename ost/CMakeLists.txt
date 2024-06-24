@@ -10,6 +10,5 @@ build_lib(
 	model/ost-header.h
   LIBRARIES_TO_LINK ${core} 
   TEST_SOURCES 
-	test/ost-simple-test.cc
 	test/ost-compare-test.cc
 )

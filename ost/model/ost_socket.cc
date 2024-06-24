@@ -10,476 +10,557 @@
 namespace ns3
 {
 
-NS_LOG_COMPONENT_DEFINE("OstSocket");
+    NS_LOG_COMPONENT_DEFINE("OstSocket");
 
-// int8_t
-// OstSocket::open(int8_t mode)
-// {
-//     if (mode == 1) // active mode
-//     {
-//         tx_window_bottom = 0;
-//         tx_window_top = 0;
-//         Ptr<Packet> p = Create<Packet>();
-//         send_syn(tx_window_bottom);
-//         set_state(State::SYN_SENT);
-//     }
-//     else
-//     {
-//         set_state(State::LISTEN);
-//     }
-// }
-
-int8_t
-OstSocket::open(OstSocket::Mode sk_mode)
-{
-    mode = sk_mode;
-    if (mode == CONNECTIONLESS)
+    int8_t
+    OstSocket::socket_event_handler(Event e, Ptr<Packet> seg, uint8_t seq_n)
     {
-        state = OPEN;
-        init_socket();
-        queue->init_hw_timer();
-
-        char buff[200];
-        sprintf(buff, "opened socket [%d:%d] to %d\n", self_address, self_port, to_address);
-        NS_LOG_INFO(buff);
-    }
-    else
-    {
-        return -1;
-    }
-}
-
-int8_t
-OstSocket::close()
-{
-    if (mode != CONNECTIONLESS)
-    {
-        state = CLOSE_WAIT;
-        send_rejection(0);
-    }
-    else
-    {
-        state = CLOSED;
-    }
-    tx_window_bottom = 0;
-    tx_window_top = 0;
-    rx_window_bottom = 0;
-    rx_window_top = 0;
-    to_retr = 0;
-    self_address = -1;
-}
-
-int8_t
-OstSocket::send(Ptr<Packet> segment)
-{
-    char buff[200];
-    if (state != OPEN)
-    {
-        sprintf(buff, "socket[%d:%d] must be in open state\n", self_address, self_port);
-        NS_LOG_ERROR(buff);
-        return -1;
-    }
-
-    if (!tx_sliding_window_have_space())
-    {
-        NS_LOG_ERROR("no free space in tx_buffer\n");
-        return -1;
-    }
-
-    OstHeader seg_header;
-    segment->RemoveHeader(seg_header);
-
-    acknowledged[tx_window_top] = 0;
-    tx_buffer[tx_window_top] = segment->Copy();
-    OstHeader header = OstHeader(tx_window_top, self_address, seg_header.get_payload_len());
-    header.set_flag(DTA);
-    tx_buffer[tx_window_top]->AddHeader(header);
-
-    int8_t r = send_to_physical(DTA, tx_window_top);
-    if (r != 1)
-        return -1;
-    tx_window_top = (tx_window_top + 1) % WINDOW_SZ;
-    return 1;
-}
-
-int8_t
-OstSocket::receive(Ptr<Packet>& segment)
-{
-}
-
-int8_t
-OstSocket::add_to_tx(Ptr<Packet> seg, uint8_t& seq_n)
-{
-    if (tx_sliding_window_have_space())
-    {
-        acknowledged[tx_window_top] = 0;
-
-        tx_buffer[tx_window_top] = seg;
-        OstHeader header = OstHeader(tx_window_top, self_address, seg->GetSize());
-        tx_buffer[tx_window_top]->AddHeader(header);
-        seq_n = tx_window_top;
-        tx_window_top = (tx_window_top + 1) % WINDOW_SZ;
-        return 1;
-    }
-    return -1;
-}
-
-int8_t 
-OstSocket::socket_event_handler(const OstSocket::Event e, Ptr<Packet> seg, uint8_t seq_n)
-{
-    return 1;
-}
-
-uint8_t
-OstSocket::get_address() const
-{
-    return self_address;
-}
-
-void
-OstSocket::set_address(uint8_t addr)
-{
-    self_address = addr;
-}
-
-OstSocket::State
-OstSocket::get_state() const
-{
-    return state;
-}
-
-void
-OstSocket::SetReceiveCallback(OstSocket::ReceiveCallback cb)
-{
-    application_receive_callback = cb;
-}
-
-void
-OstSocket::init_socket()
-{
-    ;
-}
-
-int8_t
-OstSocket::segment_arrival_event_socket_handler(Ptr<Packet> seg)
-{
-    if (mode == CONNECTIONLESS)
-    {
-        OstHeader header;
-
-        seg->PeekHeader(header);
-
-        if (header.is_ack())
+        switch (e)
         {
-            if (in_tx_window(header.get_seq_number()))
-            {
-                if (!acknowledged[header.get_seq_number()])
-                {
-                    acknowledged[header.get_seq_number()] = 1;
-                    queue->cancel_timer(header.get_seq_number());
-                    while (acknowledged[tx_window_bottom])
-                    {
-                        // free(tx_buffer[tx_window_bottom].payload);
-                        tx_window_bottom = (tx_window_bottom + 1) % WINDOW_SZ;
-                    }
-                }
-            }
-        }
-        else
-        {
-            if (in_rx_window(header.get_seq_number()))
-            {
-                // memcpy(&rx_buffer[header.get_seq_number()], seg, sizeof(OstSegmentHeader) +
-                // seg->header.payload_length); add_to_rx(seg);
-                send_to_application(rx_buffer[rx_window_bottom]);
-                rx_window_bottom = (rx_window_bottom + 1) % WINDOW_SZ;
-                rx_window_top = (rx_window_top + 1) % WINDOW_SZ;
-            }
-            send_to_physical(ACK, header.get_seq_number());
-        }
-        return 1;
-    }
-    else
-    {
-        full_states_handler(seg);
-    }
-    return -1;
-}
-
-void 
-OstSocket::send_rejection(uint8_t seq_n) {};
-
-void 
-OstSocket::send_syn(uint8_t seq_n) {};
-
-void
-OstSocket::send_syn_confirm(uint8_t seq_n) {};
-
-void
-OstSocket::send_confirm(uint8_t seq_n) {};
-
-int8_t
-OstSocket::send_to_physical(SegmentFlag f, uint8_t seq_n)
-{
-    if (f == ACK)
-    {
-        OstHeader header;
-        header.set_payload_len(0);
-        header.set_seq_number(0);
-        header.set_flag(ACK);
-        header.set_src_addr(self_address);
-        Ptr<Packet> ack_packet = Create<Packet>();
-        ack_packet->AddHeader(header);
-        send_spw(ack_packet);
-    }
-    else
-    {
-        OstHeader header;
-        tx_buffer[seq_n]->PeekHeader(header);
-        if (header.get_payload_len() == 0 || !header.is_dta() || header.get_seq_number() != seq_n ||
-            header.get_src_addr() != self_address)
-        {
-            NS_LOG_ERROR("trying transmit wrong packet from buffer\n");
-        }
-        return -1;
-        send_spw(tx_buffer[seq_n]);
-        if (queue->add_new_timer(seq_n, DURATION_RETRANSMISSON) != 1)
+        case PACKET_ARRIVED_FROM_NETWORK:
+            return segment_arrival_event_socket_handler(seg);
+        case APPLICATION_PACKET_READY:
+            return send_to_physical(DTA, (tx_window_top + MAX_SEQ_N - 1) % MAX_SEQ_N);
+        case RETRANSMISSION_INTERRUPT:
+            return send_to_physical(DTA, seq_n);
+        case SPW_READY:
+            peek_from_transmit_fifo();
+            return 1;
+        default:
             return -1;
-    }
-    return 1;
-}
-
-void
-OstSocket::send_spw(Ptr<Packet> segment)
-{
-    Mac8Address addr;
-    addr.CopyFrom(&to_address);
-    spw_layer->Send(segment, addr, 0);
-}
-
-void 
-OstSocket::start_close_wait_timer() {};
-
-void 
-OstSocket::stop_close_wait_timer() {};
-
-void 
-OstSocket::dealloc() {};
-
-int8_t
-OstSocket::add_to_rx(Ptr<Packet> segment)
-{
-    return -1;
-}
-
-void
-OstSocket::send_to_application(Ptr<Packet> packet)
-{
-    application_receive_callback(self_address, self_port, packet);
-}
-
-int8_t
-OstSocket::in_tx_window(uint8_t seq_n) const
-{
-    return (tx_window_top >= tx_window_bottom && seq_n >= tx_window_bottom &&
-            seq_n < tx_window_top) ||
-           (tx_window_bottom > tx_window_top &&
-            (seq_n >= tx_window_bottom || seq_n < tx_window_top));
-}
-
-int8_t
-OstSocket::in_rx_window(uint8_t seq_n) const
-{
-    return (rx_window_top >= rx_window_bottom && seq_n >= rx_window_bottom &&
-            seq_n < rx_window_top) ||
-           (rx_window_bottom > rx_window_top &&
-            (seq_n >= rx_window_bottom || seq_n < rx_window_top));
-}
-
-int8_t 
-OstSocket::tx_sliding_window_have_space() const
-{
-    if (tx_window_top >= tx_window_bottom)
-    {
-        return tx_window_top - tx_window_bottom < WINDOW_SZ;
-    }
-    else
-    {
-        return WINDOW_SZ - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
-    }
-}
-
-std::string
-OstSocket::state_name(State s)
-{
-    switch (s)
-    {
-    case CLOSED:
-        return "CLOSED";
-    case SYN_SENT:
-        return "SYN-SENT";
-    case SYN_RCVD:
-        return "SYN-RCVD";
-    case LISTEN:
-        return "LISTEN";
-    case OPEN:
-        return "OPEN";
-    case CLOSE_WAIT:
-        return "CLOSE-WAIT";
-    default:
-        return "bad";
-    }
-}
-
-int8_t
-OstSocket::full_states_handler(Ptr<Packet> p)
-{
-    OstHeader hd;
-    p->RemoveHeader(hd);
-    switch (state)
-    {
-    case State::CLOSED:
-        if (hd.is_rst())
-            ;
-        else
-            send_rejection(0);
-        break;
-    case State::CLOSE_WAIT:
-        if (hd.is_rst())
-        {
-            set_state(State::CLOSED);
-            stop_close_wait_timer();
-            dealloc();
         }
-        break;
-    case State::LISTEN:
-        if (hd.is_ack() or hd.is_dta())
-            send_rejection(0);
-        else if (hd.is_syn())
-        {
-            tx_window_bottom = hd.get_seq_number();
-            tx_window_top = hd.get_seq_number();
-            rx_window_bottom = hd.get_seq_number();
-            rx_window_top = WINDOW_SZ - 1;
-            send_syn_confirm(hd.get_seq_number());
-            set_state(State::SYN_RCVD);
-        }
-        break;
-    case State::SYN_SENT:
-        if (hd.is_syn())
-        {
-            tx_window_bottom = hd.get_seq_number();
-            tx_window_top = hd.get_seq_number();
-            rx_window_bottom = hd.get_seq_number();
-            rx_window_top = WINDOW_SZ - 1;
-            if (hd.is_ack())
+        return 1;
+    }
+
+    OstSocket::OstSocket(Ptr<OstNode> parent)
+        : ost(parent),
+            state(State::CLOSED),
+            to_address(parent->GetAddress()),
+            self_port(0),
+            tx_window_bottom(0),
+            tx_window_top(0),
+            rx_window_bottom(0),
+            rx_window_top(WINDOW_SZ),
+            transmit_fifo(CreateObject<DropTailQueue<Packet>>()),
+            receive_fifo(CreateObject<DropTailQueue<Packet>>()),
+            tx_window(std::vector<Ptr<Packet>>(WINDOW_SZ)),
+            rx_window(std::vector<Ptr<Packet>>(WINDOW_SZ)),
+            acknowledged(std::vector<bool>(WINDOW_SZ)),
+            received(std::vector<bool>(WINDOW_SZ)),
+            queue(Create<TimerFifo>()),
+            aggregated(false)
             {
-                send_confirm(hd.get_seq_number());
-                set_state(State::OPEN);
+                queue->set_callback(MakeCallback(&OstSocket::timer_handler, this));
+            };
+
+    int8_t
+    OstSocket::open(OstSocket::Mode sk_mode)
+    {
+        mode = sk_mode;
+        if (mode == CONNECTIONLESS)
+        {
+            state = OPEN;
+            spw_layer = ost->GetSpWLayer();
+            queue->init_hw_timer();
+
+            char buff[200];
+            sprintf(buff, "opened socket [%d:%d] to %d\n", ost->GetAddress(), self_port, to_address);
+            NS_LOG_INFO(buff);
+        }
+        else
+        {
+            return -1;
+        }
+    }
+
+    int8_t
+    OstSocket::close()
+    {
+        NS_LOG_INFO("Closing socket [" << std::to_string(ost->GetAddress()) << ":" << std::to_string(self_port) << "] -> [" << std::to_string(to_address) << "]");
+        if (mode != CONNECTIONLESS)
+        {
+            state = CLOSE_WAIT;
+            send_rejection(0);
+        }
+        else
+        {
+            state = CLOSED;
+        }
+        tx_window_bottom = 0;
+        tx_window_top = 0;
+        rx_window_bottom = 0;
+        rx_window_top = 0;
+        to_retr = 0;
+
+        return 1;
+    }
+
+    int8_t
+    OstSocket::send(const uint8_t *buffer, uint32_t size)
+    {
+        char buff[200];
+        if (state != OPEN)
+        {
+            sprintf(buff, "socket[%d:%d] must be in open state\n", ost->GetAddress(), self_port);
+            NS_LOG_ERROR(buff);
+            return -1;
+        }
+
+        if (size > 1024 * 64)
+            return -2;
+        Ptr<Packet> p = Create<Packet>(buffer, size);
+        OstHeader* header = new OstHeader(0, ost->GetAddress(), size);
+        header->set_flag(DTA);
+        header->set_payload_len(size);
+        header->set_src_addr(ost->GetAddress());
+        std::cout << "header is " << std::to_string(header->get_payload_len()) << " , size is " << std::to_string(size)  <<  " \n";
+        p->AddHeader(*header);
+        transmit_fifo->Enqueue(p->Copy());
+        if (spw_layer->IsReadyToTransmit())
+        {
+            Simulator::ScheduleNow(&OstSocket::peek_from_transmit_fifo, this);
+            return 1;
+        }
+        return 0;
+    }
+
+    int8_t
+    OstSocket::receive(Ptr<Packet> &segment)
+    {
+    }
+
+    void
+    OstSocket::peek_from_transmit_fifo()
+    {
+        NS_LOG_INFO("NODE[" << std::to_string(ost->GetAddress()) << "] peeking from fifo, in queue " << std::to_string(transmit_fifo->GetCurrentSize().GetValue()) << " packets\n");
+        if (!transmit_fifo->IsEmpty() && tx_sliding_window_have_space())
+        {
+            Ptr<const Packet> p = transmit_fifo->Peek();
+            if (add_packet_to_tx(p->Copy()) != -1)
+            {
+                Simulator::ScheduleNow(&OstSocket::socket_event_handler, this, APPLICATION_PACKET_READY, nullptr, 0);
+                transmit_fifo->Dequeue();
+                if (!transmit_fifo->IsEmpty())
+                    Simulator::Schedule(MicroSeconds(10), &OstSocket::peek_from_transmit_fifo, this);
+            }
+        }
+    }
+
+    int8_t
+    OstSocket::add_packet_to_tx(Ptr<Packet> p)
+    {
+        if (tx_sliding_window_have_space())
+        {
+            OstHeader header;
+            p->RemoveHeader(header);
+            header.set_seq_number(tx_window_top);
+            p->AddHeader(header);
+            tx_window[tx_window_top] = p->Copy();
+            tx_window_top = (tx_window_top + 1) % MAX_SEQ_N;
+            return 1;
+        }
+        return -1;
+    }
+
+    void
+    OstSocket::add_packet_to_transmit_fifo(Ptr<Packet> p)
+    {
+        transmit_fifo->Enqueue(p);
+    }
+
+    uint8_t
+    OstSocket::GetAddress() const
+    {
+        return to_address;
+    }
+
+    void
+    OstSocket::SetAddress(uint8_t addr)
+    {
+        std::cout << "setting address " << std::to_string(addr)  << "\n";
+        to_address = addr;
+    }
+
+    OstSocket::State
+    OstSocket::GetState() const
+    {
+        return state;
+    }
+
+    void
+    OstSocket::SetReceiveCallback(OstSocket::ReceiveCallback cb)
+    {
+        application_receive_callback = cb;
+    }
+
+    bool
+    OstSocket::IsAggregated() const
+    {
+        return aggregated;
+    }
+
+    void
+    OstSocket::SetAggregated(bool aggr) 
+    {
+        aggregated = aggr;
+    }
+
+    void
+    OstSocket::init_socket()
+    {
+        ;
+    }
+
+    int8_t
+    OstSocket::segment_arrival_event_socket_handler(Ptr<Packet> seg)
+    {
+        if (mode == CONNECTIONLESS)
+        {
+            OstHeader header;
+            seg->PeekHeader(header);
+
+            if (header.is_ack())
+            {
+                if (in_tx_window(header.get_seq_number()) && !acknowledged[header.get_seq_number()])
+                {
+                    mark_packet_ack(header.get_seq_number());
+                }
             }
             else
             {
+                if (in_rx_window(header.get_seq_number()) && !received[header.get_seq_number()])
+                {
+                    mark_packet_receipt(header.get_seq_number(), seg);
+                }
+                send_to_physical(ACK, header.get_seq_number());
+            }
+            return 1;
+        }
+        else
+        {
+            full_states_handler(seg);
+        }
+        return -1;
+    }
+
+    int8_t
+    OstSocket::mark_packet_ack(uint8_t seq_n)
+    {
+        if (!acknowledged[seq_n])
+        {
+            acknowledged[seq_n] = true;
+            if (queue->cancel_timer(seq_n) != 1)
+            {
+                NS_LOG_ERROR("error removing timer from queue");
+            };
+            while (acknowledged[tx_window_bottom] && (tx_window_bottom + 1) % MAX_SEQ_N <= tx_window_top)
+            {
+                tx_window_bottom = (tx_window_bottom + 1) % MAX_SEQ_N;
+                // and dealloc mem for packet
+            }
+            peek_from_transmit_fifo();
+        }
+        return 1;
+    }
+
+    int8_t
+    OstSocket::mark_packet_receipt(uint8_t seq_n, Ptr<Packet> pkt)
+    {
+        if (!received[seq_n])
+        {
+            received[seq_n] = true;
+            rx_window[seq_n] = pkt->Copy();
+            while (received[rx_window_bottom])
+            {
+                send_to_application(rx_window[rx_window_bottom]);
+                received[rx_window_top] = false;
+                rx_window_bottom = (rx_window_bottom + 1) % MAX_SEQ_N;
+                rx_window_top = (rx_window_top + 1) % MAX_SEQ_N;
+                // and dealloc mem for packet
+            }
+        }
+        return 1;
+    }
+
+    void
+    OstSocket::send_rejection(uint8_t seq_n) {};
+
+    void
+    OstSocket::send_syn(uint8_t seq_n) {};
+
+    void
+    OstSocket::send_syn_confirm(uint8_t seq_n) {};
+
+    void
+    OstSocket::send_confirm(uint8_t seq_n) {};
+
+    int8_t
+    OstSocket::send_to_physical(SegmentFlag f, uint8_t seq_n)
+    {
+        if (f == ACK)
+        {
+            OstHeader header;
+            header.set_payload_len(0);
+            header.set_seq_number(seq_n);
+            header.set_flag(ACK);
+            header.set_src_addr(ost->GetAddress());
+            Ptr<Packet> ack_packet = Create<Packet>(0);
+            ack_packet->AddHeader(header);
+            send_spw(ack_packet);
+        }
+        else
+        {
+            OstHeader header;
+            tx_window[seq_n]->PeekHeader(header);
+            if (header.get_payload_len() == 0 || !header.is_dta() || header.get_seq_number() != seq_n ||
+                header.get_src_addr() != ost->GetAddress())
+            {
+                NS_LOG_ERROR("trying transmit wrong packet from buffer\n");
+                return -1;
+            }
+            send_spw(tx_window[seq_n]);
+            if (queue->add_new_timer(seq_n, DURATION_RETRANSMISSON) != 1)
+                return -1;
+        }
+        return 1;
+    }
+
+    void
+    OstSocket::send_spw(Ptr<Packet> segment)
+    {
+        Mac8Address addr;
+        addr.CopyFrom(&to_address);
+        spw_layer->Send(segment, addr, 0);
+    }
+
+    void
+    OstSocket::start_close_wait_timer() {};
+
+    void
+    OstSocket::stop_close_wait_timer() {};
+
+    void
+    OstSocket::dealloc() {};
+
+    int8_t
+    OstSocket::add_to_rx(Ptr<Packet> segment)
+    {
+        return -1;
+    }
+
+    void
+    OstSocket::send_to_application(Ptr<Packet> packet)
+    {
+        // application_receive_callback(ost->GetAddress(), self_port, packet);
+    }
+
+    int8_t
+    OstSocket::in_tx_window(uint8_t seq_n) const
+    {
+        return (tx_window_top >= tx_window_bottom && seq_n >= tx_window_bottom &&
+                seq_n < tx_window_top) ||
+               (tx_window_bottom > tx_window_top &&
+                (seq_n >= tx_window_bottom || seq_n < tx_window_top));
+    }
+
+    int8_t
+    OstSocket::in_rx_window(uint8_t seq_n) const
+    {
+        return (rx_window_top >= rx_window_bottom && seq_n >= rx_window_bottom &&
+                seq_n < rx_window_top) ||
+               (rx_window_bottom > rx_window_top &&
+                (seq_n >= rx_window_bottom || seq_n < rx_window_top));
+    }
+
+    int8_t
+    OstSocket::tx_sliding_window_have_space() const
+    {
+        if (tx_window_top >= tx_window_bottom)
+        {
+            return tx_window_top - tx_window_bottom < WINDOW_SZ;
+        }
+        else
+        {
+            return WINDOW_SZ - tx_window_top + 1 + tx_window_bottom < WINDOW_SZ;
+        }
+    }
+
+    std::string
+    OstSocket::GetStateName(State s)
+    {
+        switch (s)
+        {
+        case CLOSED:
+            return "CLOSED";
+        case SYN_SENT:
+            return "SYN-SENT";
+        case SYN_RCVD:
+            return "SYN-RCVD";
+        case LISTEN:
+            return "LISTEN";
+        case OPEN:
+            return "OPEN";
+        case CLOSE_WAIT:
+            return "CLOSE-WAIT";
+        default:
+            return "bad";
+        }
+    }
+
+    int8_t
+    OstSocket::full_states_handler(Ptr<Packet> p)
+    {
+        OstHeader hd;
+        p->RemoveHeader(hd);
+        switch (state)
+        {
+        case State::CLOSED:
+            if (hd.is_rst())
+                ;
+            else
+                send_rejection(0);
+            break;
+        case State::CLOSE_WAIT:
+            if (hd.is_rst())
+            {
+                set_state(State::CLOSED);
+                stop_close_wait_timer();
+                dealloc();
+            }
+            break;
+        case State::LISTEN:
+            if (hd.is_ack() or hd.is_dta())
+                send_rejection(0);
+            else if (hd.is_syn())
+            {
+                tx_window_bottom = hd.get_seq_number();
+                tx_window_top = hd.get_seq_number();
+                rx_window_bottom = hd.get_seq_number();
+                rx_window_top = WINDOW_SZ - 1;
                 send_syn_confirm(hd.get_seq_number());
                 set_state(State::SYN_RCVD);
             }
-        }
-        else if (hd.is_rst())
-        {
-            set_state(State::CLOSED);
-            dealloc();
-        }
-        else if (hd.is_ack())
-        {
-            if (hd.get_seq_number() != tx_window_bottom)
+            break;
+        case State::SYN_SENT:
+            if (hd.is_syn())
             {
-                send_rejection(0);
-                start_close_wait_timer();
-                set_state(State::CLOSE_WAIT);
+                tx_window_bottom = hd.get_seq_number();
+                tx_window_top = hd.get_seq_number();
+                rx_window_bottom = hd.get_seq_number();
+                rx_window_top = WINDOW_SZ - 1;
+                if (hd.is_ack())
+                {
+                    send_confirm(hd.get_seq_number());
+                    set_state(State::OPEN);
+                }
+                else
+                {
+                    send_syn_confirm(hd.get_seq_number());
+                    set_state(State::SYN_RCVD);
+                }
             }
-        }
-    case State::SYN_RCVD:
-        if (hd.is_rst())
-        {
-            if (mode)
+            else if (hd.is_rst())
             {
                 set_state(State::CLOSED);
                 dealloc();
             }
-            else
+            else if (hd.is_ack())
             {
-                set_state(State::LISTEN);
+                if (hd.get_seq_number() != tx_window_bottom)
+                {
+                    send_rejection(0);
+                    start_close_wait_timer();
+                    set_state(State::CLOSE_WAIT);
+                }
             }
-        }
-        else if (hd.is_syn() || hd.is_dta())
-        {
-            send_rejection(0);
-            start_close_wait_timer();
-            set_state(State::CLOSE_WAIT);
-        }
-        else if (hd.is_ack())
-        {
-            if (hd.get_seq_number() == tx_window_bottom)
+        case State::SYN_RCVD:
+            if (hd.is_rst())
             {
-                set_state(State::OPEN);
+                if (mode)
+                {
+                    set_state(State::CLOSED);
+                    dealloc();
+                }
+                else
+                {
+                    set_state(State::LISTEN);
+                }
             }
-            else
+            else if (hd.is_syn() || hd.is_dta())
             {
                 send_rejection(0);
                 start_close_wait_timer();
                 set_state(State::CLOSE_WAIT);
             }
-        }
-        break;
-    case State::OPEN:
-        if (hd.is_rst())
-        {
-            start_close_wait_timer();
-            set_state(State::CLOSE_WAIT);
-        }
-        else if (hd.is_syn())
-        {
-            send_rejection(0);
-            start_close_wait_timer();
-            set_state(State::CLOSE_WAIT);
-        }
-        else if (hd.is_ack())
-        {
-            if (in_tx_window(hd.get_seq_number()))
+            else if (hd.is_ack())
             {
-                if (!acknowledged[hd.get_seq_number()])
+                if (hd.get_seq_number() == tx_window_bottom)
                 {
-                    acknowledged[hd.get_seq_number()] = true;
-                    queue->cancel_timer(hd.get_seq_number());
-                    while (acknowledged[tx_window_bottom])
+                    set_state(State::OPEN);
+                }
+                else
+                {
+                    send_rejection(0);
+                    start_close_wait_timer();
+                    set_state(State::CLOSE_WAIT);
+                }
+            }
+            break;
+        case State::OPEN:
+            if (hd.is_rst())
+            {
+                start_close_wait_timer();
+                set_state(State::CLOSE_WAIT);
+            }
+            else if (hd.is_syn())
+            {
+                send_rejection(0);
+                start_close_wait_timer();
+                set_state(State::CLOSE_WAIT);
+            }
+            else if (hd.is_ack())
+            {
+                if (in_tx_window(hd.get_seq_number()))
+                {
+                    if (!acknowledged[hd.get_seq_number()])
                     {
-                        tx_window_bottom = (tx_window_bottom + 1) % MAX_UNACK_PACKETS;
+                        acknowledged[hd.get_seq_number()] = true;
+                        queue->cancel_timer(hd.get_seq_number());
+                        while (acknowledged[tx_window_bottom])
+                        {
+                            tx_window_bottom = (tx_window_bottom + 1) % MAX_UNACK_PACKETS;
+                        }
                     }
                 }
             }
-        }
-        else if (hd.is_dta())
-        {
-            if (in_rx_window(hd.get_seq_number()))
+            else if (hd.is_dta())
             {
-                send_to_application(rx_buffer[rx_window_bottom]);
-                rx_window_bottom = (rx_window_bottom + 1) % MAX_UNACK_PACKETS;
-                rx_window_top = (rx_window_top + 1) % MAX_UNACK_PACKETS;
+                if (in_rx_window(hd.get_seq_number()))
+                {
+                    // send_to_application(rx_window[rx_window_bottom]);
+                    rx_window_bottom = (rx_window_bottom + 1) % MAX_UNACK_PACKETS;
+                    rx_window_top = (rx_window_top + 1) % MAX_UNACK_PACKETS;
+                }
+                send_confirm(hd.get_seq_number());
             }
-            send_confirm(hd.get_seq_number());
+            break;
+        default:
+            break;
         }
-        break;
-    default:
-        break;
+        return 0;
     }
-    return 0;
-}
 
-void
-OstSocket::set_state(State s)
-{
-    NS_LOG_LOGIC("NODE[" << std::to_string(self_address) << ":" << std::to_string(self_port)
-                         << "] new state " << state_name(s));
-    state = s;
-}
+    bool
+    OstSocket::timer_handler(uint8_t seq_n) {
+        socket_event_handler(RETRANSMISSION_INTERRUPT, nullptr, seq_n);
+    }
+
+    void
+    OstSocket::set_state(State s)
+    {
+        NS_LOG_LOGIC("NODE[" << std::to_string(ost->GetAddress()) << ":" << std::to_string(self_port)
+                             << "] new state " << GetStateName(s));
+        state = s;
+    }
 
 } // namespace ns3

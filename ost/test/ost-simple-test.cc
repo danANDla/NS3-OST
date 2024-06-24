@@ -82,7 +82,7 @@ OstTestCase1::SendMsg(Ptr<OstNode> ost, const uint8_t* buffer, uint32_t size)
         offset += packetSize;
         size -= packetSize;
     }
-    NS_LOG_INFO("USER[" << std::to_string(ost->get_address()) << "] sends message of sz = " << std::to_string(size) << ", that is separated by the applicatoin level into " << std::to_string(m_q->GetCurrentSize().GetValue()) << " packets");
+    NS_LOG_INFO("USER[" << std::to_string(ost->GetAddress()) << "] sends message of sz = " << std::to_string(size) << ", that is separated by the applicatoin level into " << std::to_string(m_q->GetCurrentSize().GetValue()) << " packets");
     Ptr<Packet> p = m_q->Dequeue();
 
     SendPacket(ost, p);
@@ -172,7 +172,7 @@ OstTestCase1::DoRun()
 
     // Simulator::ScheduleNow(GlobalTimerTick, ostA, ostB);
 
-    Simulator::Schedule(MilliSeconds(1600), &OstNode::start, ostA);
+    Simulator::Schedule(MilliSeconds(1600), &OstNode::start, ostA, 0);
     Simulator::Schedule(MilliSeconds(1800),
                         &OstTestCase1::SendMsg,
                         this,
@@ -180,7 +180,7 @@ OstTestCase1::DoRun()
                         txBuffer,
                         txBufferSize);
 
-    Simulator::Schedule(Seconds(2), &OstNode::start, ostB);
+    Simulator::Schedule(Seconds(2), &OstNode::start, ostB, 0);
 
     Simulator::Schedule(Seconds(20), &OstTestCase1::ShutdownDevices, this);
 

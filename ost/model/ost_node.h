@@ -18,100 +18,64 @@
 namespace ns3
 {
 
-class OstSocket;
+    class OstSocket;
 
-typedef enum
-{
-    PACKET_ARRIVED_FROM_NETWORK = 0,
-    APPLICATION_PACKET_READY,
-    RETRANSMISSION_INTERRUPT,
-    SPW_READY,
-    PACKET_SENT,
-    TRANSPORT_CLK_INTERRUPT
-} TransportLayerEvent;
+    typedef enum
+    {
+        PACKET_ARRIVED_FROM_NETWORK = 0,
+        APPLICATION_PACKET_READY,
+        RETRANSMISSION_INTERRUPT,
+        SPW_READY,
+    } TransportLayerEvent;
 
-class OstNode : public Object
-{
-    static const uint16_t MAX_SEQ_N = 256; // in fact range 0..255
-    static const micros_t DURATION_RETRANSMISSON = 300000;
-    static const uint8_t PORTS_NUMBER = 3;
+    class OstNode : public Object
+    {
+        static const uint8_t PORTS_NUMBER = 3;
+        static const micros_t DURATION_RETRANSMISSON = 300000;
 
-  public:
-    OstNode(Ptr<SpWDevice>, int8_t mode);
-    OstNode(Ptr<SpWDevice>, int8_t mode, uint16_t window_sz);
-    ~OstNode();
+    public:
+        int8_t start(uint8_t hw_timer_id);
+        void shutdown();
+        int8_t open_connection(uint8_t address);
+        int8_t close_connection(uint8_t address);
+        int8_t event_handler(const TransportLayerEvent e);
+        int8_t send_packet(uint8_t address, const uint8_t *buffer, uint32_t size);
 
-    int8_t event_handler(const TransportLayerEvent e);
-    void add_packet_to_transmit_fifo(Ptr<Packet>);
+        /*
+        *  NS-3 Specific
+        */
+        OstNode(Ptr<SpWDevice>, int8_t mode);
+        OstNode(Ptr<SpWDevice>, int8_t mode, uint16_t window_sz);
+        ~OstNode();
 
-    void start();
-    void shutdown();
+        int8_t GetSocket(uint8_t address, Ptr<OstSocket> &socket);
+        int8_t AggregateSocket(uint8_t address);
+        int8_t DeleteSocket(uint8_t address);
+        Ptr<SpWDevice> GetSpWLayer();
+        uint8_t GetAddress() const;
+        typedef Callback<void, uint8_t, Ptr<Packet>> ReceiveCallback;
+        void SetReceiveCallback(OstNode::ReceiveCallback cb);
 
-    int8_t open_connection(uint8_t address);
-    int8_t close_connection(uint8_t address);
-    int8_t send_packet(uint8_t address, const uint8_t* buffer, uint32_t size);
-    int8_t receive_packet(const uint8_t* buffer, uint32_t& received_sz);
+    private:
 
-    int8_t get_socket(uint8_t address, Ptr<OstSocket>& socket);
+        uint8_t self_address;
+        std::vector<OstSocket*> ports;
+        Ptr<SpWDevice> spw_layer;
+        Ptr<Packet> that_arrived;
 
-    typedef Callback<void, uint8_t, Ptr<Packet>> ReceiveCallback;
-    void SetReceiveCallback(OstNode::ReceiveCallback cb);
-
-    Ptr<SpWDevice> GetSpWLayer();
-    uint8_t get_address() const;
-
-  private:
-    void send_to_application(Ptr<Packet> packet);
-    int8_t send_to_physical(SegmentFlag t, uint8_t seq_n);
-    int8_t get_packet_from_application();
-    int8_t get_packet_from_physical();
-    void peek_from_transmit_fifo();
-
-    int8_t mark_packet_ack(uint8_t seq_n);
-    int8_t mark_packet_receipt(uint8_t seq_n, Ptr<Packet>);
-
-    int8_t add_packet_to_tx(Ptr<Packet> p);
-    bool tx_sliding_window_have_space();
-    bool in_tx_window(uint8_t);
-    bool in_rx_window(uint8_t);
-
-    bool hw_timer_handler(uint8_t);
-    bool network_layer_handler(Ptr<NetDevice> dev,
-                               Ptr<const Packet> pkt,
-                               uint16_t mode,
-                               const Address& sender);
-    void add_packet_to_receive_fifo(Ptr<Packet>);
-    void packet_sent_handler();
-    void spw_ready_handler();
-
-    int8_t aggregate_socket(uint8_t address);
-    int8_t delete_socket(uint8_t address);
-
-    uint16_t WINDOW_SZ;
-
-    uint8_t to_retr;
-    uint8_t tx_window_bottom;
-    uint8_t tx_window_top;
-    uint8_t rx_window_bottom;
-    uint8_t rx_window_top;
-    std::vector<Ptr<Packet>> tx_buffer;
-    std::vector<Ptr<Packet>> rx_buffer;
-    Ptr<Queue<Packet>> transmit_fifo;
-    Ptr<Queue<Packet>> receive_fifo;
-    
-    std::vector<bool> acknowledged;
-    std::vector<bool> received;
-    TimerFifo queue;
-    Ptr<SpWDevice> spw_layer;
-
-    uint8_t self_address;
-
-    std::string segment_type_name(SegmentFlag t);
-    std::string event_name(TransportLayerEvent e);
-    ReceiveCallback rx_cb;
-
-    std::vector<Ptr<OstSocket>> ports;
-};
+        /*
+        *  NS-3 Specific
+        */
+        uint16_t WINDOW_SZ;
+        ReceiveCallback rx_cb;
+        bool NetworkLayerReceive(Ptr<NetDevice> dev,
+                                   Ptr<const Packet> pkt,
+                                   uint16_t mode,
+                                   const Address &sender);
+        std::string GetSegmentTypeName(SegmentFlag t);
+        std::string GetTransportEventName(TransportLayerEvent e);
+        void SpwReadyHandler();
+    };
 } // namespace ns3
 
 #endif

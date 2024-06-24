@@ -40,7 +40,7 @@ namespace ns3
         i.WriteU8(flags);
         i.WriteU8(source_addr);
         i.WriteU8(seq_number);
-        i.WriteU8(payload_length);
+        i.WriteU16(payload_length);
     }
 
     uint32_t
@@ -50,7 +50,7 @@ namespace ns3
         flags = i.ReadU8();
         source_addr = i.ReadU8();
         seq_number = i.ReadU8();
-        payload_length = i.ReadU8();
+        payload_length = i.ReadU16();
         return GetSerializedSize();
     }
 
@@ -68,10 +68,10 @@ namespace ns3
         return source_addr;
     }
 
-    void OstHeader::set_payload_len(uint8_t l) {
+    void OstHeader::set_payload_len(uint16_t l) {
         payload_length = l;
     }
-    uint8_t OstHeader::get_payload_len() {
+    uint16_t OstHeader::get_payload_len() {
         return payload_length;
     }
 

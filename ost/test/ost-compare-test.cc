@@ -154,7 +154,7 @@ public:
 
     void SendMsg(uint8_t to_addr, const char *fname);
     void Receive(uint8_t, Ptr<Packet> p);
-    void Start() { ost->start(); }
+    void Start(uint8_t timer_id) { ost->start(timer_id); }
     void Shutdown() { ost->shutdown(); }
     std::vector<Ptr<Packet>> GetReceived() { return received; }
 
@@ -198,11 +198,12 @@ OstCompareTestCase::~OstCompareTestCase()
 
 void OstUser::SendMsg(uint8_t addr, const char *fname)
 {
+    
     uint64_t size;
     if (!ReadFileToBuffer(fname, msg_buffer, size))
         return;
     msg_sz = size;
-    uint32_t maxSize = 64 * 1024; // 1 << 16
+    uint32_t maxSize = 64 * 1024 - 1; // 1 << 16
     while (size)
     {
         uint32_t packetSize;
@@ -248,7 +249,7 @@ void OstCompareTestCase::ShutdownDevices()
 
 void OstUser::Receive(uint8_t sm, Ptr<Packet> p)
 {
-    NS_LOG_LOGIC("NODE[" << std::to_string(ost->get_address()) << "] received packet:" << p);
+    NS_LOG_LOGIC("NODE[" << std::to_string(ost->GetAddress()) << "] received packet:" << p);
     received.push_back(p);
 }
 
@@ -288,21 +289,19 @@ void OstCompareTestCase::DoRun()
 
     userA->GetOst()->GetSpWLayer()->SetCharacterParityErrorModel(em);
     userB->GetOst()->GetSpWLayer()->SetCharacterParityErrorModel(em);
+
     // ---------------TEST PARAMS---------------
 
-    Simulator::Schedule(MilliSeconds(1600), &OstUser::Start, userA);
+    Simulator::Schedule(MilliSeconds(1600), &OstUser::Start, userA, 0);
     Simulator::Schedule(MilliSeconds(1800),
                         &OstUser::SendMsg,
                         userA,
                         1,
                         file);
-
-    Simulator::Schedule(Seconds(2), &OstUser::Start, userB);
-
+    Simulator::Schedule(Seconds(2), &OstUser::Start, userB, 1);
     Simulator::Schedule(Seconds(200000), &OstCompareTestCase::ShutdownDevices, this);
 
     Simulator::Run();
-
     Simulator::Destroy();
 
     channel->PrintTransmitted();

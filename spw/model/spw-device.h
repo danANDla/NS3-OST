@@ -470,7 +470,7 @@ class SpWDevice : public NetDevice
     NetDevice::ReceiveCallback m_rxCallback;             //!< Receive callback
     NetDevice::PromiscReceiveCallback m_promiscCallback; //!< Receive callback
                                                          //   (promisc data)
-    PacketSentCallback start_timer_cb;
+    PacketSentCallback packet_sent_cb;
     DeviceReadyCallback device_ready_cb;
     uint32_t m_ifIndex;                                  //!< Index of the interface
     bool m_linkUp;                                       //!< Identify if the link is up or not

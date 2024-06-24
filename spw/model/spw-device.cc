@@ -289,7 +289,7 @@ SpWDevice::TransmitComplete(uint64_t uint)
     if (!p)
     {
         NS_LOG_LOGIC("No pending packets in device queue after tx complete");
-        start_timer_cb();
+        device_ready_cb();
         return;
     }
 
@@ -602,8 +602,6 @@ SpWDevice::ErrorResetSpWState()
     Simulator::Cancel(sendFCT);
 
     Simulator::Schedule(SPW_HALF_DELAY, &SpWDevice::ErrorWaitSpWState, this);
-    uint8_t addr;
-    m_address.CopyTo(&addr);
 }
 
 void
@@ -781,7 +779,7 @@ SpWDevice::SetPromiscReceiveCallback(NetDevice::PromiscReceiveCallback cb)
 void
 SpWDevice::SetPacketSentCallcback(PacketSentCallback cb)
 {
-    start_timer_cb = cb;
+    packet_sent_cb = cb;
 }
 
 void
